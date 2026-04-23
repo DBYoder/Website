@@ -6,6 +6,23 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Btn, Label, CornerBracket } from '../components/Core';
 
+// --- CSV helpers ---
+function escapeCSV(val: string): string {
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+function storiesToCSV(stories: Story[]): string {
+  const header = ['title', 'asA', 'iWant', 'soThat', 'points', 'criteria'].join(',');
+  const rows = stories.map(s =>
+    [s.title, s.asA, s.iWant, s.soThat, s.points ?? '', (s.criteria ?? []).join('|')]
+      .map(escapeCSV).join(',')
+  );
+  return [header, ...rows].join('\n');
+}
+
 // --- Types ---
 interface Story {
   id: string;
@@ -249,6 +266,18 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     navigate(`/poker?room=${newCode}&user=${encodeURIComponent(trimUser)}`);
   };
 
+  const handleDownloadCSV = () => {
+    if (backlog.length === 0) return;
+    const csv = storiesToCSV(backlog);
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `backlog-${Date.now()}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   const handleCopy = () => {
     if (!formData.asA && !formData.iWant && !formData.soThat) return;
     const text = [
@@ -358,6 +387,14 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${COLORS.border}, transparent)` }} />
             <Btn style={{ fontSize: 11, padding: '6px 16px' }} onClick={handleCopy} aria-label="Copy current story draft to clipboard">
               {copyLabel}
+            </Btn>
+            <Btn
+              onClick={handleDownloadCSV}
+              disabled={backlog.length === 0}
+              style={{ fontSize: 11, padding: '6px 16px', opacity: backlog.length === 0 ? 0.4 : 1 }}
+              aria-label="Download backlog as CSV"
+            >
+              download csv ↓
             </Btn>
           </div>
 

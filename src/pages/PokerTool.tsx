@@ -32,6 +32,66 @@ interface PokerSession {
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
 
+// --- CSV helpers ---
+const CSV_HEADERS = ['title', 'asA', 'iWant', 'soThat', 'points', 'criteria'];
+
+function escapeCSV(val: string): string {
+  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
+    return `"${val.replace(/"/g, '""')}"`;
+  }
+  return val;
+}
+
+function parseCSVRow(line: string): string[] {
+  const fields: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
+      else { inQuotes = !inQuotes; }
+    } else if (ch === ',' && !inQuotes) {
+      fields.push(cur); cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  fields.push(cur);
+  return fields;
+}
+
+function parseStoriesFromCSV(text: string): Story[] {
+  const lines = text.trim().split(/\r?\n/);
+  if (lines.length < 2) return [];
+  const header = parseCSVRow(lines[0]).map(h => h.toLowerCase().trim().replace(/\s+/g, ''));
+  const idx = (key: string) => header.indexOf(key);
+  return lines.slice(1).filter(l => l.trim()).map(line => {
+    const row = parseCSVRow(line);
+    const get = (key: string, fallback = '') => { const i = idx(key); return i >= 0 ? (row[i] ?? fallback) : fallback; };
+    const criteriaStr = get('criteria');
+    return {
+      id: Math.random().toString(36).substr(2, 9),
+      title: get('title'),
+      asA: get('asa'),
+      iWant: get('iwant'),
+      soThat: get('sothat'),
+      points: get('points') || undefined,
+      criteria: criteriaStr ? criteriaStr.split('|').filter(Boolean) : [],
+    };
+  }).filter(s => s.title || s.asA);
+}
+
+function storiesToCSV(stories: Story[]): string {
+  const rows = [
+    CSV_HEADERS.join(','),
+    ...stories.map(s => [
+      s.title, s.asA, s.iWant, s.soThat, s.points ?? '', (s.criteria ?? []).join('|'),
+    ].map(escapeCSV).join(',')),
+  ];
+  return rows.join('\n');
+}
+
 // --- Styles ---
 const PokerContainer = styled.div`
   flex: 1;
@@ -185,6 +245,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const location = useLocation();
   const socketRef = useRef<Socket | null>(null);
   const initialSearchRef = useRef(location.search);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [roomCode, setRoomCode] = useState('');
   const [username, setUsername] = useState('');
@@ -270,25 +331,29 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleExport = () => {
     if (!session) return;
-    const date = new Date().toLocaleDateString();
-    const estimated = session.backlog.filter(s => s.points);
-    const lines = [
-      'PLANNING POKER EXPORT',
-      `Date: ${date}  |  Room: ${roomCode}`,
-      '',
-      '=== STORY POINTS ===',
-      ...session.backlog.map(s => `${s.points ? '✓' : '○'} ${s.title}: ${s.points ? s.points + ' pts' : 'unestimated'}`),
-      '',
-      `Estimated: ${estimated.length} / ${session.backlog.length} stories`,
-    ].join('\n');
-
-    const blob = new Blob([lines], { type: 'text/plain' });
+    const csv = storiesToCSV(session.backlog);
+    const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `poker-${roomCode}-${Date.now()}.txt`;
+    a.download = `poker-${roomCode}-${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = evt.target?.result as string;
+      const stories = parseStoriesFromCSV(text);
+      if (stories.length > 0) {
+        socketRef.current?.emit('poker:updateBacklog', { roomId: roomCode, backlog: stories });
+      }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   if (!isJoined) {
@@ -406,12 +471,18 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
               <Label>backlog</Label>
-              {session.backlog.some(s => s.points) && (
-                <Btn onClick={handleExport} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Export story points">
-                  export ↓
+              <div style={{ display: 'flex', gap: 6 }}>
+                <Btn onClick={() => fileInputRef.current?.click()} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Import stories from CSV">
+                  import ↑
                 </Btn>
-              )}
+                {session.backlog.some(s => s.points) && (
+                  <Btn onClick={handleExport} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Export story points as CSV">
+                    export ↓
+                  </Btn>
+                )}
+              </div>
             </div>
+            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleFileChange} aria-hidden="true" />
             <div style={{ maxHeight: 200, overflowY: 'auto' }} role="list" aria-label="Story backlog">
               {session.backlog.length === 0 ? (
                 <div className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>No stories pushed yet.</div>

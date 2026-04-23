@@ -203,6 +203,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   });
   const [generated, setGenerated] = useState(false);
   const [copyLabel, setCopyLabel] = useState('copy draft ⎘');
+  const [confirmClear, setConfirmClear] = useState(false);
 
   // Poker launch modal state
   const [showPokerModal, setShowPokerModal] = useState(false);
@@ -264,6 +265,14 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     socketRef.current?.emit('poker:updateBacklog', { roomId: newCode, backlog });
     navigate(`/poker?room=${newCode}&user=${encodeURIComponent(trimUser)}`);
+  };
+
+  const handleClearAll = () => {
+    setBacklog([]);
+    setCriteria([]);
+    setFormData({ asA: '', iWant: '', soThat: '', priority: 'Medium', points: '3' });
+    setGenerated(false);
+    setConfirmClear(false);
   };
 
   const handleDownloadCSV = () => {
@@ -396,6 +405,34 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             >
               download csv ↓
             </Btn>
+            {confirmClear ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta }}>clear all?</span>
+                <Btn
+                  onClick={handleClearAll}
+                  style={{ fontSize: 11, padding: '6px 12px', borderColor: COLORS.magenta, color: COLORS.magenta }}
+                  aria-label="Confirm clear all stories"
+                >
+                  yes
+                </Btn>
+                <Btn
+                  onClick={() => setConfirmClear(false)}
+                  style={{ fontSize: 11, padding: '6px 12px' }}
+                  aria-label="Cancel clear all"
+                >
+                  no
+                </Btn>
+              </div>
+            ) : (
+              <Btn
+                onClick={() => setConfirmClear(true)}
+                disabled={backlog.length === 0}
+                style={{ fontSize: 11, padding: '6px 16px', opacity: backlog.length === 0 ? 0.4 : 1 }}
+                aria-label="Clear all stories from backlog"
+              >
+                clear all
+              </Btn>
+            )}
           </div>
 
           <StoryCard>

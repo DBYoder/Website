@@ -39,7 +39,7 @@ const Input = styled.input`
   height: 40px;
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
-  padding: 0 166px;
+  padding: 0 16px;
   color: ${COLORS.primary};
   font-family: 'Share Tech Mono', monospace;
   font-size: 14px;
@@ -262,9 +262,16 @@ ${criteria.map(c => `- ${c}`).join('\n')}
                 ) : (
                   <BacklogList>
                     {backlog.map((item, i) => (
-                      <BacklogItem key={item.id}>
-                        <span className="wf-body" style={{ fontSize: 14 }}>{i+1}. {item.title}</span>
-                        <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10 }}>remove</Btn>
+                      <BacklogItem key={item.id} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                        <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 8, marginBottom: 4 }}>
+                          <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{i+1}</span>
+                          <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }}>remove</Btn>
+                        </div>
+                        <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.4 }}>
+                          <span style={{ color: COLORS.muted }}>AS A</span> {item.asA} <br/>
+                          <span style={{ color: COLORS.muted }}>I WANT</span> {item.iWant} <br/>
+                          <span style={{ color: COLORS.muted }}>SO THAT</span> {item.soThat}
+                        </div>
                       </BacklogItem>
                     ))}
                   </BacklogList>

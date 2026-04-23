@@ -289,10 +289,33 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               {session.currentStory ? session.currentStory.title : "No story selected"}
             </div>
             {session.currentStory && (
-              <div style={{ marginTop: 12, padding: 16, background: 'rgba(255,255,255,0.03)', border: `1px solid ${COLORS.border}` }}>
-                <div className="wf-body" style={{ fontSize: 14, color: COLORS.secondary }}>
-                  {session.currentStory.asA} {session.currentStory.iWant} {session.currentStory.soThat}
+              <div style={{ marginTop: 12, padding: 24, background: 'rgba(255,255,255,0.03)', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span className="wf-mono" style={{ color: COLORS.cyan, fontSize: 13, minWidth: 80 }}>AS A</span>
+                  <span className="wf-body" style={{ fontSize: 16, color: COLORS.primary }}>{session.currentStory.asA}</span>
                 </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span className="wf-mono" style={{ color: COLORS.cyan, fontSize: 13, minWidth: 80 }}>I WANT</span>
+                  <span className="wf-body" style={{ fontSize: 16, color: COLORS.primary }}>{session.currentStory.iWant}</span>
+                </div>
+                <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+                  <span className="wf-mono" style={{ color: COLORS.cyan, fontSize: 13, minWidth: 80 }}>SO THAT</span>
+                  <span className="wf-body" style={{ fontSize: 16, color: COLORS.primary }}>{session.currentStory.soThat}</span>
+                </div>
+                
+                {session.currentStory.criteria && session.currentStory.criteria.length > 0 && (
+                  <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
+                    <Label style={{ display: 'block', marginBottom: 12 }}>Acceptance Criteria</Label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {session.currentStory.criteria.map((c: string, i: number) => (
+                        <div key={i} style={{ display: 'flex', gap: 12, fontSize: 14 }}>
+                          <span style={{ color: COLORS.cyan }}>•</span>
+                          <span className="wf-body">{c}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>

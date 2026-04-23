@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
+import { io, Socket } from 'socket.io-client';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
-import { Label, Tag, Box, Lines, Btn, CornerBracket } from '../components/Core';
+import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
 
 const PokerContainer = styled.div`
   flex: 1;
@@ -75,64 +76,120 @@ const ConsensusBox = styled.div`
   position: relative;
 `;
 
-const BreakdownRow = styled.div`
+const JoinOverlay = styled.div`
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: ${COLORS.bg};
+  z-index: 100;
   display: flex;
   align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
+  justify-content: center;
+  flex-direction: column;
+  gap: 20px;
 `;
 
-const BarContainer = styled.div`
-  flex: 1;
-  height: 6px;
+const Input = styled.input`
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
+  color: ${COLORS.primary};
+  padding: 8px 12px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  width: 200px;
+  
+  &:focus {
+    outline: none;
+    border-color: ${COLORS.cyan};
+  }
 `;
 
-const Bar = styled.div<{ width: number; color: string }>`
-  width: ${props => props.width}%;
-  height: 100%;
-  background: ${props => props.color};
-`;
+let socket: Socket;
 
 const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const [gameState, setGameState] = useState<'voting' | 'revealed'>('voting');
+  const [roomCode, setRoomCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [isJoined, setIsJoined] = useState(false);
+  const [session, setSession] = useState<any>(null);
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
-  
-  const participants = [
-    { name: 'alice', voted: true, vote: '5' },
-    { name: 'bob', voted: true, vote: '8' },
-    { name: 'carol', voted: true, vote: '5' },
-    { name: 'dave', voted: false, vote: '3' },
-    { name: 'eve', voted: true, vote: '5' },
-  ];
 
+  useEffect(() => {
+    socket = io(window.location.origin);
+    
+    socket.on('poker:state', (newState) => {
+      setSession(newState);
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  const handleJoin = () => {
+    if (roomCode && username) {
+      socket.emit('poker:join', { roomId: roomCode, username });
+      setIsJoined(true);
+    }
+  };
+
+  const handleVote = (val: string) => {
+    setSelectedCard(val);
+    socket.emit('poker:vote', { roomId: roomCode, vote: val });
+  };
+
+  const handleReveal = () => {
+    socket.emit('poker:reveal', roomCode);
+  };
+
+  const handleReset = () => {
+    setSelectedCard(null);
+    socket.emit('poker:reset', roomCode);
+  };
+
+  if (!isJoined) {
+    return (
+      <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>
+        <JoinOverlay>
+          <Box style={{ padding: 30, display: 'flex', flexDirection: 'column', gap: 15 }}>
+            <Label color={COLORS.cyan}>join session</Label>
+            <Input placeholder="USERNAME" value={username} onChange={e => setUsername(e.target.value)} />
+            <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+            <Btn primary onClick={handleJoin} style={{ width: '100%', justifyContent: 'center' }}>Enter Session →</Btn>
+          </Box>
+        </JoinOverlay>
+      </ToolShell>
+    );
+  }
+
+  if (!session) return <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>Loading...</ToolShell>;
+
+  const participants = Object.values(session.participants);
   const cards = ['1', '2', '3', '5', '8', '13', '21', '?', '☕'];
+  const votedCount = participants.filter((p: any) => p.voted).length;
 
   return (
     <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>
       <PokerContainer>
         <LeftPanel>
           <div style={{ padding: '12px 14px', borderBottom: `1px solid ${COLORS.border}` }}>
-            <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 6 }}>session</Label>
-            <div className="wf-mono" style={{ fontSize: 11, color: COLORS.primary, marginBottom: 4 }}>Sprint 24 Planning</div>
+            <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 6 }}>session: {roomCode}</Label>
+            <div className="wf-mono" style={{ fontSize: 11, color: COLORS.primary, marginBottom: 4 }}>{session.currentStory}</div>
             <div style={{ display: 'flex', gap: 6 }}>
-              <Tag color={gameState === 'voting' ? COLORS.lime : COLORS.magenta}>
-                {gameState.toUpperCase()}
+              <Tag color={session.gameState === 'voting' ? COLORS.lime : COLORS.magenta}>
+                {session.gameState.toUpperCase()}
               </Tag>
-              {gameState === 'voting' && <span className="wf-mono" style={{ fontSize: 8, color: COLORS.muted }}>4/5 voted</span>}
+              {session.gameState === 'voting' && <span className="wf-mono" style={{ fontSize: 8, color: COLORS.muted }}>{votedCount}/{participants.length} voted</span>}
             </div>
           </div>
 
           <div style={{ padding: '10px 14px', flex: 1 }}>
-            <Label style={{ display: 'block', marginBottom: 8 }}>{gameState === 'voting' ? 'participants' : 'votes'}</Label>
-            {participants.map((p) => (
-              <ParticipantItem key={p.name}>
+            <Label style={{ display: 'block', marginBottom: 8 }}>{session.gameState === 'voting' ? 'participants' : 'votes'}</Label>
+            {participants.map((p: any, i: number) => (
+              <ParticipantItem key={i}>
                 <Avatar>
-                  <span className="wf-mono" style={{ fontSize: 8, color: COLORS.secondary }}>{p.name[0].toUpperCase()}</span>
+                  <span className="wf-mono" style={{ fontSize: 8, color: COLORS.secondary }}>{p.username[0].toUpperCase()}</span>
                 </Avatar>
-                <span className="wf-mono" style={{ fontSize: 9, color: COLORS.secondary, flex: 1 }}>{p.name}</span>
-                {gameState === 'voting' ? (
+                <span className="wf-mono" style={{ fontSize: 9, color: COLORS.secondary, flex: 1 }}>{p.username}</span>
+                {session.gameState === 'voting' ? (
                   p.voted ? (
                     <div style={{ width: 14, height: 14, background: COLORS.elevated, border: `1px solid ${COLORS.cyan}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                       <span style={{ fontSize: 8, color: COLORS.cyan }}>✓</span>
@@ -141,21 +198,15 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     <div style={{ width: 14, height: 14, background: COLORS.elevated, border: `1px dashed ${COLORS.muted}` }} />
                   )
                 ) : (
-                  <span className="wf-retro" style={{ fontSize: 14, color: p.vote === '5' ? COLORS.cyan : COLORS.secondary }}>{p.vote}</span>
+                  <span className="wf-retro" style={{ fontSize: 14, color: COLORS.cyan }}>{p.vote}</span>
                 )}
               </ParticipantItem>
             ))}
           </div>
-
-          <div style={{ padding: '10px 14px', borderTop: `1px solid ${COLORS.border}` }}>
-            <Label style={{ display: 'block', marginBottom: 4 }}>current story</Label>
-            <div className="wf-body" style={{ fontSize: 10, color: COLORS.primary, marginBottom: 4 }}>UST-041: Implement sidebar navigation</div>
-            <Lines count={1} color={COLORS.borderBright} />
-          </div>
         </LeftPanel>
 
         <ContentPanel>
-          {gameState === 'voting' ? (
+          {session.gameState === 'voting' ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
                 <Label color={COLORS.cyan}>select your estimate</Label>
@@ -168,7 +219,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     key={val} 
                     active={selectedCard === val} 
                     color={COLORS.cyan}
-                    onClick={() => setSelectedCard(val)}
+                    onClick={() => handleVote(val)}
                   >
                     <span className="wf-title" style={{ fontSize: selectedCard === val ? 20 : 16, color: selectedCard === val ? COLORS.cyan : COLORS.secondary }}>{val}</span>
                     {selectedCard === val && <CornerBracket color={COLORS.cyan} style={{ top: 0, left: 0 }} size={5} />}
@@ -177,56 +228,19 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               </CardDeck>
 
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ width: 6, height: 6, borderRadius: '50%', background: COLORS.yellow, boxShadow: `0 0 4px ${COLORS.yellow}` }} />
-                  <span className="wf-mono" style={{ fontSize: 9, color: COLORS.yellow }}>waiting for dave...</span>
-                </div>
-                <Btn primary onClick={() => setGameState('revealed')}>reveal votes →</Btn>
+                <Btn primary onClick={handleReveal}>reveal votes →</Btn>
               </div>
             </>
           ) : (
             <>
-              <div style={{ display: 'flex', gap: 16, marginBottom: 20 }}>
-                <ConsensusBox>
-                  <CornerBracket color={COLORS.cyan} style={{ top: 0, left: 0 }} />
-                  <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 6 }}>consensus</Label>
-                  <div className="wf-retro" style={{ fontSize: 42, color: COLORS.cyan, textShadow: `0 0 12px ${COLORS.cyan}` }}>5</div>
-                  <Label style={{ fontSize: 8 }}>story points</Label>
-                </ConsensusBox>
-                
-                <Box style={{ flex: 1, padding: '14px 16px' }}>
-                  <Label style={{ display: 'block', marginBottom: 10 }}>breakdown</Label>
-                  {[
-                    { val: '3', count: 1, color: COLORS.secondary },
-                    { val: '5', count: 3, color: COLORS.cyan },
-                    { val: '8', count: 1, color: COLORS.secondary }
-                  ].map((item) => (
-                    <BreakdownRow key={item.val}>
-                      <span className="wf-mono" style={{ fontSize: 10, color: item.color, width: 16 }}>{item.val}</span>
-                      <BarContainer>
-                        <Bar width={(item.count / 5) * 100} color={item.color} />
-                      </BarContainer>
-                      <span className="wf-mono" style={{ fontSize: 8, color: COLORS.muted }}>{item.count}</span>
-                    </BreakdownRow>
-                  ))}
-                </Box>
-              </div>
-
-              <CardDeck>
-                {participants.map((p) => (
-                  <div key={p.name} style={{ textAlign: 'center' }}>
-                    <Card color={p.vote === '5' ? COLORS.cyan : COLORS.border} style={{ cursor: 'default', marginBottom: 4 }}>
-                      <span className="wf-title" style={{ fontSize: 18, color: p.vote === '5' ? COLORS.cyan : COLORS.secondary }}>{p.vote}</span>
-                    </Card>
-                    <span className="wf-mono" style={{ fontSize: 8, color: COLORS.muted }}>{p.name}</span>
-                  </div>
-                ))}
-              </CardDeck>
-
+              <ConsensusBox style={{ marginBottom: 20 }}>
+                <CornerBracket color={COLORS.cyan} style={{ top: 0, left: 0 }} />
+                <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 6 }}>reveal complete</Label>
+                <div className="wf-retro" style={{ fontSize: 24, color: COLORS.cyan }}>Ready for next round</div>
+              </ConsensusBox>
+              
               <div style={{ marginTop: 'auto', display: 'flex', gap: 10 }}>
-                <Btn primary>accept 5 pts →</Btn>
-                <Btn onClick={() => setGameState('voting')}>re-vote</Btn>
-                <Btn>next story →</Btn>
+                <Btn primary onClick={handleReset}>new round →</Btn>
               </div>
             </>
           )}

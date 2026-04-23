@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
+import { io, Socket } from 'socket.io-client';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
-import { Tag, Btn, Label } from '../components/Core';
+import { Tag, Btn, Label, Box } from '../components/Core';
 
 const RetroContainer = styled.div`
   flex: 1;
@@ -100,58 +101,123 @@ const AddCardBtn = styled.div`
   }
 `;
 
-interface RetroNote {
-  text: string;
-  votes: number;
-  owner?: string;
-}
+const JoinOverlay = styled.div`
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: ${COLORS.bg};
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 20px;
+`;
+
+const Input = styled.input`
+  background: ${COLORS.elevated};
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.primary};
+  padding: 8px 12px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  width: 200px;
+  
+  &:focus {
+    outline: none;
+    border-color: ${COLORS.magenta};
+  }
+`;
+
+let socket: Socket;
 
 const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
-  const [columns, setColumns] = useState<{
-    wentWell: RetroNote[];
-    toImprove: RetroNote[];
-    actionItems: RetroNote[];
-  }>({
-    wentWell: [
-      { text: "Team communication was great", votes: 4 },
-      { text: "Fast turnaround on code reviews", votes: 2 },
-      { text: "Successfully deployed v1.0", votes: 1 },
-    ],
-    toImprove: [
-      { text: "Meeting overlap in the mornings", votes: 5 },
-      { text: "Requirement ambiguity on tickets", votes: 3 },
-      { text: "Late morning standups", votes: 0 },
-    ],
-    actionItems: [
-      { text: "Move standup to 10:00 AM", votes: 0, owner: 'alice' },
-      { text: "Document API schema updates", votes: 0, owner: 'bob' },
-    ]
-  });
+  const [roomCode, setRoomCode] = useState('');
+  const [username, setUsername] = useState('');
+  const [isJoined, setIsJoined] = useState(false);
+  const [session, setSession] = useState<any>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
 
-  const handleAddNote = (colKey: keyof typeof columns) => {
-    const text = prompt("Enter note text:");
-    if (text) {
-      setColumns({
-        ...columns,
-        [colKey]: [...columns[colKey], { text, votes: 0 }]
-      });
+  useEffect(() => {
+    socket = io(window.location.origin);
+    
+    socket.on('retro:state', (newState) => {
+      setSession(newState);
+      if (newState.timer.isRunning) {
+        setTimeLeft(newState.timer.remaining);
+      }
+    });
+
+    return () => {
+      socket.disconnect();
+    };
+  }, []);
+
+  useEffect(() => {
+    let interval: any;
+    if (timeLeft > 0) {
+      interval = setInterval(() => {
+        setTimeLeft(prev => prev - 1);
+      }, 1000);
+    }
+    return () => clearInterval(interval);
+  }, [timeLeft]);
+
+  const handleJoin = () => {
+    if (roomCode && username) {
+      socket.emit('retro:join', { roomId: roomCode, username });
+      setIsJoined(true);
     }
   };
 
-  const handleVote = (colKey: keyof typeof columns, index: number) => {
-    const newCol = [...columns[colKey]];
-    newCol[index].votes += 1;
-    setColumns({ ...columns, [colKey]: newCol });
+  const handleAddNote = (colKey: string) => {
+    const text = prompt("Enter note text:");
+    if (text) {
+      socket.emit('retro:addCard', { roomId: roomCode, colKey, text, username });
+    }
   };
+
+  const handleVote = (colKey: string, cardId: string) => {
+    socket.emit('retro:vote', { roomId: roomCode, colKey, cardId });
+  };
+
+  const startTimer = () => {
+    const mins = prompt("Minutes for timer:", "5");
+    if (mins) {
+      socket.emit('retro:startTimer', { roomId: roomCode, duration: parseInt(mins) * 60 });
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  if (!isJoined) {
+    return (
+      <ToolShell toolName="Retro Board" toolColor={COLORS.magenta} activeNav="retro" onBack={onBack}>
+        <JoinOverlay>
+          <Box style={{ padding: 30, display: 'flex', flexDirection: 'column', gap: 15 }}>
+            <Label color={COLORS.magenta}>join retro session</Label>
+            <Input placeholder="USERNAME" value={username} onChange={e => setUsername(e.target.value)} />
+            <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+            <Btn primary onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)' }}>Enter Retro →</Btn>
+          </Box>
+        </JoinOverlay>
+      </ToolShell>
+    );
+  }
+
+  if (!session) return <ToolShell toolName="Retro Board" toolColor={COLORS.magenta} activeNav="retro" onBack={onBack}>Loading...</ToolShell>;
 
   return (
     <ToolShell toolName="Retro Board" toolColor={COLORS.magenta} activeNav="retro" onBack={onBack}>
       <RetroContainer>
         <Toolbar>
-          <span className="wf-mono" style={{ fontSize: 9, color: COLORS.magenta }}>Sprint 24 Retrospective</span>
+          <span className="wf-mono" style={{ fontSize: 9, color: COLORS.magenta }}>Room: {roomCode}</span>
           <div style={{ flex: 1, height: 1, background: COLORS.border }} />
-          <Tag color={COLORS.lime}>OPEN</Tag>
-          <Btn>timer</Btn>
+          {timeLeft > 0 && <Tag color={COLORS.yellow}>{formatTime(timeLeft)}</Tag>}
+          <Btn onClick={startTimer}>timer</Btn>
           <Btn primary onClick={() => handleAddNote('wentWell')} style={{ borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)' }}>+ add note</Btn>
         </Toolbar>
 
@@ -168,19 +234,15 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <ColumnHeader>
                   <ColumnDot color={config.color} />
                   <span className="wf-mono" style={{ fontSize: 10, color: config.color, flex: 1 }}>{config.title}</span>
-                  <Label style={{ fontSize: 8 }}>{columns[key].length}</Label>
+                  <Label style={{ fontSize: 8 }}>{session.columns[key].length}</Label>
                 </ColumnHeader>
                 <CardList>
-                  {columns[key].map((note, i) => (
-                    <RetroCard key={i}>
+                  {session.columns[key].map((note: any) => (
+                    <RetroCard key={note.id}>
                       <div className="wf-body" style={{ fontSize: 11, color: COLORS.primary, marginBottom: 6 }}>{note.text}</div>
                       <VoteContainer>
-                        {note.owner ? (
-                          <span className="wf-mono" style={{ fontSize: 7, color: config.color }}>→ {note.owner}</span>
-                        ) : (
-                          <div />
-                        )}
-                        <VoteBtn color={config.color} onClick={() => handleVote(key, i)}>
+                        <span className="wf-mono" style={{ fontSize: 7, color: COLORS.muted }}>by {note.owner}</span>
+                        <VoteBtn color={config.color} onClick={() => handleVote(key, note.id)}>
                           <span style={{ fontSize: 8, color: config.color }}>▲</span>
                           <span className="wf-mono" style={{ fontSize: 8, color: note.votes > 0 ? config.color : COLORS.muted }}>{note.votes}</span>
                         </VoteBtn>

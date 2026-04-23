@@ -17,44 +17,129 @@ const io = new Server(httpServer, {
 
 const PORT = process.env.PORT || 3000;
 
-// Serve static files from the Vite build directory
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// API routes placeholder
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', message: 'Backend is running with Socket.io' });
-});
+// In-memory store for sessions
+const sessions = {
+  poker: {},
+  retro: {}
+};
 
-// Socket.io logic for tools
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  console.log('User connected:', socket.id);
 
-  // Planning Poker events
-  socket.on('poker:join', (roomId) => {
+  // --- Planning Poker ---
+  socket.on('poker:join', ({ roomId, username }) => {
     socket.join(`poker:${roomId}`);
-    console.log(`User ${socket.id} joined poker room: ${roomId}`);
+    
+    if (!sessions.poker[roomId]) {
+      sessions.poker[roomId] = {
+        participants: {},
+        gameState: 'voting',
+        currentStory: 'New Story'
+      };
+    }
+    
+    sessions.poker[roomId].participants[socket.id] = {
+      username,
+      vote: null,
+      voted: false
+    };
+
+    io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
   });
 
   socket.on('poker:vote', ({ roomId, vote }) => {
-    io.to(`poker:${roomId}`).emit('poker:voted', { userId: socket.id, vote });
+    const session = sessions.poker[roomId];
+    if (session && session.participants[socket.id]) {
+      session.participants[socket.id].vote = vote;
+      session.participants[socket.id].voted = true;
+      io.to(`poker:${roomId}`).emit('poker:state', session);
+    }
   });
 
-  // Retro Board events
-  socket.on('retro:join', (roomId) => {
+  socket.on('poker:reveal', (roomId) => {
+    const session = sessions.poker[roomId];
+    if (session) {
+      session.gameState = 'revealed';
+      io.to(`poker:${roomId}`).emit('poker:state', session);
+    }
+  });
+
+  socket.on('poker:reset', (roomId) => {
+    const session = sessions.poker[roomId];
+    if (session) {
+      session.gameState = 'voting';
+      Object.values(session.participants).forEach(p => {
+        p.vote = null;
+        p.voted = false;
+      });
+      io.to(`poker:${roomId}`).emit('poker:state', session);
+    }
+  });
+
+  // --- Retro Board ---
+  socket.on('retro:join', ({ roomId, username }) => {
     socket.join(`retro:${roomId}`);
-    console.log(`User ${socket.id} joined retro room: ${roomId}`);
+    
+    if (!sessions.retro[roomId]) {
+      sessions.retro[roomId] = {
+        columns: {
+          wentWell: [],
+          toImprove: [],
+          actionItems: []
+        },
+        timer: {
+          remaining: 0,
+          isRunning: false
+        }
+      };
+    }
+    
+    io.to(`retro:${roomId}`).emit('retro:state', sessions.retro[roomId]);
   });
 
-  socket.on('retro:addCard', ({ roomId, card }) => {
-    io.to(`retro:${roomId}`).emit('retro:cardAdded', card);
+  socket.on('retro:addCard', ({ roomId, colKey, text, username }) => {
+    const session = sessions.retro[roomId];
+    if (session) {
+      session.columns[colKey].push({ text, votes: 0, owner: username, id: Math.random().toString(36).substr(2, 9) });
+      io.to(`retro:${roomId}`).emit('retro:state', session);
+    }
+  });
+
+  socket.on('retro:vote', ({ roomId, colKey, cardId }) => {
+    const session = sessions.retro[roomId];
+    if (session) {
+      const card = session.columns[colKey].find(c => c.id === cardId);
+      if (card) card.votes += 1;
+      io.to(`retro:${roomId}`).emit('retro:state', session);
+    }
+  });
+
+  socket.on('retro:startTimer', ({ roomId, duration }) => {
+    const session = sessions.retro[roomId];
+    if (session) {
+      session.timer.remaining = duration;
+      session.timer.isRunning = true;
+      io.to(`retro:${roomId}`).emit('retro:state', session);
+    }
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    // Clean up poker
+    for (const roomId in sessions.poker) {
+      if (sessions.poker[roomId].participants[socket.id]) {
+        delete sessions.poker[roomId].participants[socket.id];
+        if (Object.keys(sessions.poker[roomId].participants).length === 0) {
+          delete sessions.poker[roomId];
+        } else {
+          io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
+        }
+      }
+    }
   });
 });
 
-// For any other request, serve index.html (SPA support)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

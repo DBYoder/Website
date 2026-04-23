@@ -115,7 +115,7 @@ const StoryCard = styled.div`
   position: relative;
   display: flex;
   flex-direction: column;
-  overflow-y: auto;
+  overflow: hidden;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
 `;
 
@@ -136,21 +136,24 @@ const StoryLine = styled.div`
 `;
 
 const BacklogList = styled.div`
-  margin-top: 20px;
+  margin-top: 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
-  max-height: 200px;
+  flex: 1;
   overflow-y: auto;
+  min-height: 0;
 `;
 
-const BacklogItem = styled.div`
+const BacklogItem = styled.div<{ incomplete?: boolean }>`
   padding: 12px;
   background: ${COLORS.elevated};
-  border: 1px solid ${COLORS.border};
+  border: 1px solid ${props => props.incomplete ? COLORS.magenta : COLORS.border};
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex-shrink: 0;
+  ${props => props.incomplete && `box-shadow: 0 0 10px rgba(255, 0, 128, 0.1);`}
 `;
 
 const ModalOverlay = styled.div`
@@ -206,6 +209,8 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [generated, setGenerated] = useState(false);
   const [copyLabel, setCopyLabel] = useState('copy draft ⎘');
   const [confirmClear, setConfirmClear] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editDraft, setEditDraft] = useState({ asA: '', iWant: '', soThat: '' });
 
   // Poker launch modal state
   const [showPokerModal, setShowPokerModal] = useState(false);
@@ -267,6 +272,24 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     socketRef.current?.emit('poker:updateBacklog', { roomId: newCode, backlog });
     navigate(`/poker?room=${newCode}&user=${encodeURIComponent(trimUser)}`);
+  };
+
+  const isIncomplete = (s: Story) => !s.asA.trim() || !s.iWant.trim() || !s.soThat.trim();
+
+  const startEdit = (item: Story) => {
+    setEditingId(item.id);
+    setEditDraft({ asA: item.asA, iWant: item.iWant, soThat: item.soThat });
+  };
+
+  const saveEdit = (id: string) => {
+    setBacklog(prev => prev.map(s => s.id !== id ? s : {
+      ...s,
+      asA: editDraft.asA,
+      iWant: editDraft.iWant,
+      soThat: editDraft.soThat,
+      title: `${editDraft.asA}: ${editDraft.iWant.slice(0, 30)}${editDraft.iWant.length > 30 ? '...' : ''}`,
+    }));
+    setEditingId(null);
   };
 
   const handleClearAll = () => {
@@ -442,7 +465,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <CornerBracket color={COLORS.purple} style={{ bottom: 0, right: 0, transform: 'rotate(180deg)' }} size={16} />
 
             {generated ? (
-              <>
+              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'auto' }}>
                 <StoryBody>
                   <StoryLine>
                     <span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>AS A</span>
@@ -472,7 +495,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   </>
                 )}
 
-                <div style={{ display: 'flex', gap: 12, marginTop: 'auto' }}>
+                <div style={{ display: 'flex', gap: 12, marginTop: 'auto', paddingTop: 16 }}>
                   <Btn
                     primary
                     onClick={addToBacklog}
@@ -489,7 +512,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     ← edit
                   </Btn>
                 </div>
-              </>
+              </div>
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
                 <Label style={{ marginBottom: 16 }}>Backlog Items</Label>
@@ -499,31 +522,63 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   </div>
                 ) : (
                   <BacklogList role="list" aria-label="Story backlog">
-                    {backlog.map((item, i) => (
-                      <BacklogItem key={item.id} role="listitem">
-                        <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 8, marginBottom: 4 }}>
-                          <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{i + 1}</span>
-                          <Btn
-                            onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))}
-                            style={{ fontSize: 10, padding: '4px 8px' }}
-                            aria-label={`Remove story ${i + 1}: ${item.title}`}
-                          >
-                            remove
-                          </Btn>
-                        </div>
-                        {(item.epic || item.feature) && (
-                          <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
-                            {item.epic && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta, border: `1px solid ${COLORS.magenta}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{item.epic}</span>}
-                            {item.feature && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.cyan, border: `1px solid ${COLORS.cyan}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{item.feature}</span>}
+                    {backlog.map((item, i) => {
+                      const incomplete = isIncomplete(item);
+                      const editing = editingId === item.id;
+                      return (
+                        <BacklogItem key={item.id} role="listitem" incomplete={incomplete}>
+                          <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 8, marginBottom: 4 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{i + 1}</span>
+                              {incomplete && <span className="wf-mono" style={{ fontSize: 9, color: COLORS.magenta, border: `1px solid ${COLORS.magenta}`, padding: '1px 5px', letterSpacing: '0.08em' }}>INCOMPLETE</span>}
+                            </div>
+                            <div style={{ display: 'flex', gap: 6 }}>
+                              {!editing && (
+                                <Btn onClick={() => startEdit(item)} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Edit story ${i + 1}`}>edit</Btn>
+                              )}
+                              <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Remove story ${i + 1}`}>remove</Btn>
+                            </div>
                           </div>
-                        )}
-                        <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.4, width: '100%' }}>
-                          <span style={{ color: COLORS.muted }}>AS A</span> {item.asA}<br />
-                          <span style={{ color: COLORS.muted }}>I WANT TO</span> {item.iWant}<br />
-                          <span style={{ color: COLORS.muted }}>SO THAT</span> {item.soThat}
-                        </div>
-                      </BacklogItem>
-                    ))}
+
+                          {(item.epic || item.feature) && (
+                            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                              {item.epic && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta, border: `1px solid ${COLORS.magenta}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{item.epic}</span>}
+                              {item.feature && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.cyan, border: `1px solid ${COLORS.cyan}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{item.feature}</span>}
+                            </div>
+                          )}
+
+                          {editing ? (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                              <div>
+                                <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>AS A</Label>
+                                <TextArea height={36} value={editDraft.asA} onChange={e => setEditDraft({ ...editDraft, asA: e.target.value })} aria-label="Edit as a" />
+                              </div>
+                              <div>
+                                <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>I WANT TO</Label>
+                                <TextArea value={editDraft.iWant} onChange={e => setEditDraft({ ...editDraft, iWant: e.target.value })} aria-label="Edit i want to" />
+                              </div>
+                              <div>
+                                <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>SO THAT</Label>
+                                <TextArea value={editDraft.soThat} onChange={e => setEditDraft({ ...editDraft, soThat: e.target.value })} aria-label="Edit so that" />
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <Btn primary onClick={() => saveEdit(item.id)} style={{ flex: 1, justifyContent: 'center', fontSize: 11, padding: '8px' }} aria-label="Save edits">save</Btn>
+                                <Btn onClick={() => setEditingId(null)} style={{ fontSize: 11, padding: '8px 14px' }} aria-label="Cancel edit">cancel</Btn>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.5, width: '100%' }}>
+                              <span style={{ color: COLORS.muted }}>AS A</span>{' '}
+                              {item.asA || <span style={{ color: COLORS.magenta }}>—</span>}<br />
+                              <span style={{ color: COLORS.muted }}>I WANT TO</span>{' '}
+                              {item.iWant || <span style={{ color: COLORS.magenta }}>—</span>}<br />
+                              <span style={{ color: COLORS.muted }}>SO THAT</span>{' '}
+                              {item.soThat || <span style={{ color: COLORS.magenta }}>—</span>}
+                            </div>
+                          )}
+                        </BacklogItem>
+                      );
+                    })}
                   </BacklogList>
                 )}
               </div>

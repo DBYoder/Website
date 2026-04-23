@@ -98,14 +98,26 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('poker:reset', (roomId) => {
+  socket.on('poker:completeStory', ({ roomId, storyId, points }) => {
     const session = sessions.poker[roomId];
     if (session) {
+      // Find and update the story in the backlog
+      const storyIndex = session.backlog.findIndex(s => s.id === storyId);
+      if (storyIndex !== -1) {
+        session.backlog[storyIndex].points = points;
+      }
+
+      // Move to next story if available
+      const nextStory = session.backlog[storyIndex + 1];
+      session.currentStory = nextStory || null;
       session.gameState = 'voting';
+      
+      // Reset votes
       Object.values(session.participants).forEach(p => {
         p.vote = null;
         p.voted = false;
       });
+
       io.to(`poker:${roomId}`).emit('poker:state', session);
     }
   });

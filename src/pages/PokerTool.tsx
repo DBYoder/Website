@@ -131,6 +131,17 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   };
 
+  const handleStartNew = () => {
+    if (username) {
+      const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      setRoomCode(newCode);
+      socket.emit('poker:join', { roomId: newCode, username });
+      setIsJoined(true);
+    } else {
+      alert("Please enter a username first");
+    }
+  };
+
   const handleVote = (val: string) => {
     setSelectedCard(val);
     socket.emit('poker:vote', { roomId: roomCode, vote: val });
@@ -150,10 +161,19 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>
         <JoinOverlay>
           <Box style={{ padding: 30, display: 'flex', flexDirection: 'column', gap: 15 }}>
-            <Label color={COLORS.cyan}>join session</Label>
+            <Label color={COLORS.cyan}>poker session</Label>
             <Input placeholder="USERNAME" value={username} onChange={e => setUsername(e.target.value)} />
-            <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
-            <Btn primary onClick={handleJoin} style={{ width: '100%', justifyContent: 'center' }}>Enter Session →</Btn>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <Btn primary onClick={handleStartNew} style={{ width: '100%', justifyContent: 'center' }}>Start New Session +</Btn>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, margin: '5px 0' }}>
+                <div style={{ flex: 1, height: 1, background: COLORS.border }} />
+                <span className="wf-mono" style={{ fontSize: 8, color: COLORS.muted }}>OR JOIN EXISTING</span>
+                <div style={{ flex: 1, height: 1, background: COLORS.border }} />
+              </div>
+              <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
+              <Btn onClick={handleJoin} style={{ width: '100%', justifyContent: 'center' }}>Join Session →</Btn>
+            </div>
           </Box>
         </JoinOverlay>
       </ToolShell>

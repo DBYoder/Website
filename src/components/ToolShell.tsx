@@ -1,7 +1,8 @@
 import React from 'react';
 import styled from 'styled-components';
+import { Link } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
-import { Tag, Btn } from './Core';
+import { Tag, Btn, Label } from './Core';
 
 const ShellLayout = styled.div`
   width: 100%;
@@ -12,7 +13,7 @@ const ShellLayout = styled.div`
 `;
 
 const Sidebar = styled.div`
-  width: 160px;
+  width: 240px;
   height: 100%;
   background: ${COLORS.surface};
   border-right: 1px solid ${COLORS.border};
@@ -21,28 +22,31 @@ const Sidebar = styled.div`
 `;
 
 const SidebarHeader = styled.div`
-  padding: 14px 12px;
+  padding: 32px 24px;
   border-bottom: 1px solid ${COLORS.border};
 `;
 
 const NavList = styled.div`
-  padding: 10px 0;
+  padding: 24px 0;
   flex: 1;
 `;
 
-const NavItemStyled = styled.div<{ active?: boolean; toolColor: string }>`
-  padding: 6px 12px;
-  background: ${props => props.active ? 'rgba(0, 245, 255, 0.06)' : 'transparent'};
-  border-left: 2px solid ${props => props.active ? props.toolColor : 'transparent'};
+const NavLink = styled(Link)<{ active?: boolean; toolColor: string }>`
+  padding: 12px 24px;
+  display: block;
+  text-decoration: none;
+  background: ${props => props.active ? 'rgba(255, 255, 255, 0.03)' : 'transparent'};
+  border-left: 3px solid ${props => props.active ? props.toolColor : 'transparent'};
   cursor: pointer;
+  transition: all 0.2s;
   
   &:hover {
-    background: rgba(255, 255, 255, 0.03);
+    background: rgba(255, 255, 255, 0.05);
   }
 `;
 
 const SidebarFooter = styled.div`
-  padding: 10px 12px;
+  padding: 24px;
   border-top: 1px solid ${COLORS.border};
 `;
 
@@ -53,12 +57,12 @@ const Main = styled.div`
 `;
 
 const TopBar = styled.div`
-  height: 34px;
+  height: 52px;
   border-bottom: 1px solid ${COLORS.border};
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 18px;
+  padding: 0 32px;
   background: ${COLORS.surface};
 `;
 
@@ -75,37 +79,38 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
     <ShellLayout>
       <Sidebar>
         <SidebarHeader>
-          <div className="wf-title" style={{ fontSize: 12, color: COLORS.cyan, letterSpacing: '0.1em' }}>AGILE//FREE</div>
-          <div className="wf-label" style={{ fontSize: 7, color: COLORS.muted, marginTop: 2 }}>pm tools for teams</div>
+          <div className="wf-title" style={{ fontSize: 22, color: COLORS.cyan, textShadow: `0 0 10px ${COLORS.cyan}`, letterSpacing: '0.1em' }}>AGILE//FREE</div>
+          <div className="wf-label" style={{ fontSize: 11, color: COLORS.muted, marginTop: 6 }}>pm tools for teams</div>
         </SidebarHeader>
 
         <NavList>
           {[
-            { label: '// home', id: 'home' },
-            { label: '// poker', id: 'poker' },
-            { label: '// retro', id: 'retro' },
-            { label: '// stories', id: 'stories' },
-            { label: '// about', id: 'about' },
-          ].map(({ label, id }) => {
+            { label: '// home', id: 'home', path: '/' },
+            { label: '// poker', id: 'poker', path: '/poker' },
+            { label: '// retro', id: 'retro', path: '/retro' },
+            { label: '// stories', id: 'stories', path: '/stories' },
+            { label: '// about', id: 'about', path: '#' },
+          ].map(({ label, id, path }) => {
             const active = activeNav === id;
             return (
-              <NavItemStyled 
+              <NavLink 
                 key={label} 
+                to={path}
                 active={active} 
                 toolColor={toolColor}
-                onClick={() => id === 'home' && onBack()}
               >
-                <span className="wf-mono" style={{ fontSize: 9, color: active ? toolColor : COLORS.secondary }}>{label}</span>
-              </NavItemStyled>
+                <span className="wf-mono" style={{ fontSize: 13, color: active ? toolColor : COLORS.secondary }}>{label}</span>
+              </NavLink>
             );
           })}
         </NavList>
 
         <SidebarFooter>
+          <Label size={10} style={{ display: 'block', marginBottom: 12 }}>monitors</Label>
           {['poker', 'retro', 'stories'].map(t => (
-            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 3 }}>
-              <div style={{ width: 4, height: 4, background: COLORS.lime, borderRadius: '50%' }} />
-              <span className="wf-mono" style={{ fontSize: 7, color: t === activeNav ? toolColor : COLORS.secondary }}>{t}</span>
+            <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <div style={{ width: 6, height: 6, background: COLORS.lime, borderRadius: '50%', boxShadow: `0 0 4px ${COLORS.lime}` }} />
+              <span className="wf-mono" style={{ fontSize: 11, color: t === activeNav ? toolColor : COLORS.secondary }}>{t}</span>
             </div>
           ))}
         </SidebarFooter>
@@ -113,13 +118,13 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
 
       <Main>
         <TopBar>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <span className="wf-mono" style={{ fontSize: 9, color: toolColor }}>~/{activeNav}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+            <span className="wf-mono" style={{ fontSize: 13, color: toolColor }}>~/{activeNav}</span>
             <Tag color={toolColor}>LIVE</Tag>
           </div>
-          <div style={{ display: 'flex', gap: 10 }}>
-            <Btn>share link</Btn>
-            <Btn onClick={onBack}>← back</Btn>
+          <div style={{ display: 'flex', gap: 16 }}>
+            <Btn style={{ fontSize: 12 }}>share link</Btn>
+            <Btn onClick={onBack} style={{ fontSize: 12 }}>← back</Btn>
           </div>
         </TopBar>
         {children}

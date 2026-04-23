@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
+import React from 'react';
 import styled from 'styled-components';
+import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { GlobalStyles } from './GlobalStyles';
 import LandingPage from './pages/LandingPage';
 import PokerTool from './pages/PokerTool';
@@ -13,29 +14,28 @@ const AppContainer = styled.div`
   overflow: hidden;
 `;
 
-const App: React.FC = () => {
-  const [currentTool, setCurrentTool] = useState<'home' | 'poker' | 'retro' | 'stories'>('home');
-
-  const renderContent = () => {
-    switch (currentTool) {
-      case 'poker':
-        return <PokerTool onBack={() => setCurrentTool('home')} />;
-      case 'retro':
-        return <RetroTool onBack={() => setCurrentTool('home')} />;
-      case 'stories':
-        return <StoryTool onBack={() => setCurrentTool('home')} />;
-      default:
-        return <LandingPage onLaunch={(tool) => setCurrentTool(tool as any)} />;
-    }
-  };
+const NavigationWrapper: React.FC = () => {
+  const navigate = useNavigate();
 
   return (
-    <>
+    <Routes>
+      <Route path="/" element={<LandingPage onLaunch={(tool) => navigate(`/${tool}`)} />} />
+      <Route path="/poker" element={<PokerTool onBack={() => navigate('/')} />} />
+      <Route path="/retro" element={<RetroTool onBack={() => navigate('/')} />} />
+      <Route path="/stories" element={<StoryTool onBack={() => navigate('/')} />} />
+      <Route path="*" element={<LandingPage onLaunch={(tool) => navigate(`/${tool}`)} />} />
+    </Routes>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <Router>
       <GlobalStyles />
       <AppContainer>
-        {renderContent()}
+        <NavigationWrapper />
       </AppContainer>
-    </>
+    </Router>
   );
 };
 

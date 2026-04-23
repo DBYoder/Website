@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { io, Socket } from 'socket.io-client';
+import { useLocation } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
@@ -127,6 +128,7 @@ const Input = styled.input`
 let socket: Socket;
 
 const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const location = useLocation();
   const [roomCode, setRoomCode] = useState('');
   const [username, setUsername] = useState('');
   const [isJoined, setIsJoined] = useState(false);
@@ -140,10 +142,22 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setSession(newState);
     });
 
+    // Check for room and user in URL
+    const params = new URLSearchParams(location.search);
+    const urlRoom = params.get('room');
+    const urlUser = params.get('user');
+    
+    if (urlRoom && urlUser) {
+      setRoomCode(urlRoom.toUpperCase());
+      setUsername(urlUser);
+      socket.emit('poker:join', { roomId: urlRoom.toUpperCase(), username: urlUser });
+      setIsJoined(true);
+    }
+
     return () => {
       socket.disconnect();
     };
-  }, []);
+  }, [location]);
 
   const handleJoin = () => {
     if (roomCode && username) {

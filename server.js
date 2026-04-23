@@ -51,14 +51,21 @@ io.on('connection', (socket) => {
   });
 
   socket.on('poker:updateBacklog', ({ roomId, backlog }) => {
-    const session = sessions.poker[roomId];
-    if (session) {
+    if (!sessions.poker[roomId]) {
+      sessions.poker[roomId] = {
+        participants: {},
+        gameState: 'voting',
+        currentStory: backlog.length > 0 ? backlog[0] : null,
+        backlog: backlog
+      };
+    } else {
+      const session = sessions.poker[roomId];
       session.backlog = backlog;
       if (!session.currentStory && backlog.length > 0) {
         session.currentStory = backlog[0];
       }
-      io.to(`poker:${roomId}`).emit('poker:state', session);
     }
+    io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
   });
 
   socket.on('poker:selectStory', ({ roomId, story }) => {

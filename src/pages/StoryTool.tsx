@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styled from 'styled-components';
 import { io, Socket } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Btn, Label, CornerBracket } from '../components/Core';
@@ -38,7 +39,7 @@ const Input = styled.input`
   height: 40px;
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
-  padding: 0 16px;
+  padding: 0 166px;
   color: ${COLORS.primary};
   font-family: 'Share Tech Mono', monospace;
   font-size: 14px;
@@ -115,6 +116,7 @@ const BacklogItem = styled.div`
 let socket: Socket;
 
 const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const navigate = useNavigate();
   const [formData, setFormData] = useState({
     asA: 'Product Manager',
     iWant: 'a tool that generates user stories automatically',
@@ -161,13 +163,19 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const pushToPoker = () => {
-    const roomCode = prompt("Enter Planning Poker Room Code:");
-    if (roomCode && backlog.length > 0) {
-      socket.emit('poker:updateBacklog', { roomId: roomCode.toUpperCase(), backlog });
-      alert(`Backlog pushed to Poker Session: ${roomCode.toUpperCase()}`);
-    } else if (backlog.length === 0) {
+    if (backlog.length === 0) {
       alert("Backlog is empty!");
+      return;
     }
+    
+    const username = prompt("Enter your username for the poker session:");
+    if (!username) return;
+
+    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    socket.emit('poker:updateBacklog', { roomId: newCode, backlog });
+    
+    // Redirect to PokerTool with parameters
+    navigate(`/poker?room=${newCode}&user=${username}`);
   };
 
   const handleCopy = () => {
@@ -210,7 +218,7 @@ ${criteria.map(c => `- ${c}`).join('\n')}
           </FormGroup>
           <div style={{ marginTop: 'auto', display: 'flex', gap: 12, flexDirection: 'column' }}>
             <Btn primary onClick={handleGenerate} style={{ width: '100%', borderColor: COLORS.purple, color: COLORS.purple, background: 'rgba(184, 41, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center' }}>✦ generate</Btn>
-            <Btn onClick={pushToPoker} style={{ width: '100%', borderColor: COLORS.cyan, color: COLORS.cyan, background: 'rgba(0, 245, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center' }}>↑ push backlog to poker</Btn>
+            <Btn onClick={pushToPoker} style={{ width: '100%', borderColor: COLORS.cyan, color: COLORS.cyan, background: 'rgba(0, 245, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center' }}>↑ start poker with backlog</Btn>
           </div>
         </InputPanel>
 

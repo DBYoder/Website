@@ -12,7 +12,7 @@ const PokerContainer = styled.div`
 `;
 
 const LeftPanel = styled.div`
-  width: 280px;
+  width: 320px;
   border-right: 1px solid ${COLORS.border};
   display: flex;
   flex-direction: column;
@@ -61,10 +61,6 @@ const ParticipantItem = styled.div`
   padding: 8px 12px;
   background: rgba(255, 255, 255, 0.02);
   border: 1px solid transparent;
-  
-  &:hover {
-    border-color: ${COLORS.border};
-  }
 `;
 
 const Avatar = styled.div`
@@ -75,6 +71,18 @@ const Avatar = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+`;
+
+const BacklogItem = styled.div<{ active?: boolean }>`
+  padding: 10px 14px;
+  background: ${props => props.active ? 'rgba(0, 245, 255, 0.08)' : 'transparent'};
+  border: 1px solid ${props => props.active ? COLORS.cyan : 'transparent'};
+  cursor: pointer;
+  margin-bottom: 6px;
+  
+  &:hover {
+    background: rgba(0, 245, 255, 0.04);
+  }
 `;
 
 const ConsensusBox = styled.div`
@@ -139,7 +147,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleJoin = () => {
     if (roomCode && username) {
-      socket.emit('poker:join', { roomId: roomCode, username });
+      socket.emit('poker:join', { roomId: roomCode.toUpperCase(), username });
       setIsJoined(true);
     }
   };
@@ -167,6 +175,10 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const handleReset = () => {
     setSelectedCard(null);
     socket.emit('poker:reset', roomCode);
+  };
+
+  const selectStory = (story: any) => {
+    socket.emit('poker:selectStory', { roomId: roomCode, story });
   };
 
   if (!isJoined) {
@@ -205,12 +217,30 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <LeftPanel>
           <div style={{ padding: '24px', borderBottom: `1px solid ${COLORS.border}` }}>
             <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>session: {roomCode}</Label>
-            <div className="wf-mono" style={{ fontSize: 15, color: COLORS.primary, marginBottom: 8 }}>{session.currentStory}</div>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Tag color={session.gameState === 'voting' ? COLORS.lime : COLORS.magenta}>
                 {session.gameState.toUpperCase()}
               </Tag>
               {session.gameState === 'voting' && <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>{votedCount}/{participants.length} voted</span>}
+            </div>
+          </div>
+
+          <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
+            <Label style={{ display: 'block', marginBottom: 12 }}>backlog</Label>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+              {session.backlog.length === 0 ? (
+                <div className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>No stories pushed yet.</div>
+              ) : (
+                session.backlog.map((story: any) => (
+                  <BacklogItem 
+                    key={story.id} 
+                    active={session.currentStory?.id === story.id}
+                    onClick={() => selectStory(story)}
+                  >
+                    <div className="wf-mono" style={{ fontSize: 11, color: session.currentStory?.id === story.id ? COLORS.cyan : COLORS.secondary }}>{story.title}</div>
+                  </BacklogItem>
+                ))
+              )}
             </div>
           </div>
 
@@ -239,6 +269,20 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </LeftPanel>
 
         <ContentPanel>
+          <div style={{ marginBottom: 32 }}>
+            <Label color={COLORS.cyan} size={14}>current story</Label>
+            <div className="wf-title" style={{ fontSize: 24, color: COLORS.primary, marginTop: 8 }}>
+              {session.currentStory ? session.currentStory.title : "No story selected"}
+            </div>
+            {session.currentStory && (
+              <div style={{ marginTop: 12, padding: 16, background: 'rgba(255,255,255,0.03)', border: `1px solid ${COLORS.border}` }}>
+                <div className="wf-body" style={{ fontSize: 14, color: COLORS.secondary }}>
+                  {session.currentStory.asA} {session.currentStory.iWant} {session.currentStory.soThat}
+                </div>
+              </div>
+            )}
+          </div>
+
           {session.gameState === 'voting' ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>

@@ -13,12 +13,12 @@ const RetroContainer = styled.div`
 `;
 
 const Toolbar = styled.div`
-  height: 36px;
+  height: 52px;
   border-bottom: 1px solid ${COLORS.border};
   display: flex;
   align-items: center;
-  gap: 12px;
-  padding: 0 16px;
+  gap: 20px;
+  padding: 0 32px;
   background: ${COLORS.surface};
 `;
 
@@ -35,50 +35,60 @@ const Column = styled.div<{ last?: boolean }>`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  background: ${COLORS.bg};
 `;
 
 const ColumnHeader = styled.div`
-  padding: 10px 14px;
+  padding: 24px 32px;
   border-bottom: 1px solid ${COLORS.border};
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
+  background: ${COLORS.surface};
 `;
 
 const ColumnDot = styled.div<{ color: string }>`
-  width: 6px;
-  height: 6px;
+  width: 10px;
+  height: 10px;
   background: ${props => props.color};
-  box-shadow: 0 0 4px ${props => props.color};
+  box-shadow: 0 0 8px ${props => props.color};
 `;
 
 const CardList = styled.div`
   flex: 1;
-  padding: 10px;
+  padding: 24px;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
 `;
 
 const RetroCard = styled.div`
   background: ${COLORS.card};
   border: 1px solid ${COLORS.border};
-  padding: 10px;
+  padding: 20px 24px;
   position: relative;
+  transition: all 0.2s;
+  
+  &:hover {
+    border-color: ${COLORS.borderBright};
+    transform: translateX(4px);
+  }
 `;
 
 const VoteContainer = styled.div`
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin-top: 6px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
 `;
 
 const VoteBtn = styled.div<{ color: string }>`
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 8px;
   cursor: pointer;
   
   &:hover span {
@@ -88,16 +98,18 @@ const VoteBtn = styled.div<{ color: string }>`
 
 const AddCardBtn = styled.div`
   border: 1px dashed ${COLORS.border};
-  padding: 8px 10px;
+  padding: 16px 20px;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: 10px;
   cursor: pointer;
+  transition: all 0.2s;
   
   &:hover {
     border-color: ${COLORS.borderBright};
     background: rgba(255, 255, 255, 0.02);
+    color: ${COLORS.primary};
   }
 `;
 
@@ -110,17 +122,17 @@ const JoinOverlay = styled.div`
   align-items: center;
   justify-content: center;
   flex-direction: column;
-  gap: 20px;
+  gap: 32px;
 `;
 
 const Input = styled.input`
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
   color: ${COLORS.primary};
-  padding: 8px 12px;
+  padding: 12px 16px;
   font-family: 'Share Tech Mono', monospace;
-  font-size: 14px;
-  width: 200px;
+  font-size: 18px;
+  width: 320px;
   
   &:focus {
     outline: none;
@@ -197,11 +209,11 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return (
       <ToolShell toolName="Retro Board" toolColor={COLORS.magenta} activeNav="retro" onBack={onBack}>
         <JoinOverlay>
-          <Box style={{ padding: 30, display: 'flex', flexDirection: 'column', gap: 15 }}>
-            <Label color={COLORS.magenta}>join retro session</Label>
+          <Box w={400} style={{ padding: 48, display: 'flex', flexDirection: 'column', gap: 24 }}>
+            <Label color={COLORS.magenta} size={16}>retro session</Label>
             <Input placeholder="USERNAME" value={username} onChange={e => setUsername(e.target.value)} />
-            <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
-            <Btn primary onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)' }}>Enter Retro →</Btn>
+            <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} style={{ width: '100%' }} />
+            <Btn primary onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)', fontSize: 14, padding: '14px' }}>Enter Retro →</Btn>
           </Box>
         </JoinOverlay>
       </ToolShell>
@@ -214,11 +226,11 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <ToolShell toolName="Retro Board" toolColor={COLORS.magenta} activeNav="retro" onBack={onBack}>
       <RetroContainer>
         <Toolbar>
-          <span className="wf-mono" style={{ fontSize: 9, color: COLORS.magenta }}>Room: {roomCode}</span>
+          <span className="wf-mono" style={{ fontSize: 13, color: COLORS.magenta }}>Room: {roomCode}</span>
           <div style={{ flex: 1, height: 1, background: COLORS.border }} />
           {timeLeft > 0 && <Tag color={COLORS.yellow}>{formatTime(timeLeft)}</Tag>}
-          <Btn onClick={startTimer}>timer</Btn>
-          <Btn primary onClick={() => handleAddNote('wentWell')} style={{ borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)' }}>+ add note</Btn>
+          <Btn onClick={startTimer} style={{ padding: '8px 24px' }}>timer</Btn>
+          <Btn primary onClick={() => handleAddNote('wentWell')} style={{ borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)', padding: '8px 24px' }}>+ add note</Btn>
         </Toolbar>
 
         <ColumnsGrid>
@@ -233,24 +245,24 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               <Column key={key} last={ci === 2}>
                 <ColumnHeader>
                   <ColumnDot color={config.color} />
-                  <span className="wf-mono" style={{ fontSize: 10, color: config.color, flex: 1 }}>{config.title}</span>
-                  <Label style={{ fontSize: 8 }}>{session.columns[key].length}</Label>
+                  <span className="wf-mono" style={{ fontSize: 14, color: config.color, flex: 1 }}>{config.title}</span>
+                  <Label style={{ fontSize: 12 }}>{session.columns[key].length}</Label>
                 </ColumnHeader>
                 <CardList>
                   {session.columns[key].map((note: any) => (
                     <RetroCard key={note.id}>
-                      <div className="wf-body" style={{ fontSize: 11, color: COLORS.primary, marginBottom: 6 }}>{note.text}</div>
+                      <div className="wf-body" style={{ fontSize: 15, color: COLORS.primary, marginBottom: 8, lineHeight: 1.4 }}>{note.text}</div>
                       <VoteContainer>
-                        <span className="wf-mono" style={{ fontSize: 7, color: COLORS.muted }}>by {note.owner}</span>
+                        <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>by {note.owner}</span>
                         <VoteBtn color={config.color} onClick={() => handleVote(key, note.id)}>
-                          <span style={{ fontSize: 8, color: config.color }}>▲</span>
-                          <span className="wf-mono" style={{ fontSize: 8, color: note.votes > 0 ? config.color : COLORS.muted }}>{note.votes}</span>
+                          <span style={{ fontSize: 14, color: config.color }}>▲</span>
+                          <span className="wf-mono" style={{ fontSize: 13, color: note.votes > 0 ? config.color : COLORS.muted }}>{note.votes}</span>
                         </VoteBtn>
                       </VoteContainer>
                     </RetroCard>
                   ))}
                   <AddCardBtn onClick={() => handleAddNote(key)}>
-                    <span className="wf-mono" style={{ fontSize: 9, color: COLORS.muted }}>+ add card</span>
+                    <span className="wf-mono" style={{ fontSize: 13, color: COLORS.muted }}>+ add card</span>
                   </AddCardBtn>
                 </CardList>
               </Column>

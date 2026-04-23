@@ -11,17 +11,18 @@ const StoryContainer = styled.div`
 `;
 
 const InputPanel = styled.div`
-  width: 320px;
+  width: 420px;
   border-right: 1px solid ${COLORS.border};
   display: flex;
   flex-direction: column;
-  padding: 18px 16px;
-  gap: 14px;
+  padding: 32px;
+  gap: 24px;
+  background: ${COLORS.surface};
 `;
 
 const OutputPanel = styled.div`
   flex: 1;
-  padding: 18px 20px;
+  padding: 32px 48px;
   display: flex;
   flex-direction: column;
 `;
@@ -29,17 +30,17 @@ const OutputPanel = styled.div`
 const FormGroup = styled.div`
   display: flex;
   flex-direction: column;
-  gap: 5px;
+  gap: 10px;
 `;
 
 const Input = styled.input`
-  height: 28px;
+  height: 40px;
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
-  padding: 0 10px;
+  padding: 0 16px;
   color: ${COLORS.primary};
   font-family: 'Share Tech Mono', monospace;
-  font-size: 10px;
+  font-size: 14px;
   
   &:focus {
     outline: none;
@@ -48,14 +49,15 @@ const Input = styled.input`
 `;
 
 const TextArea = styled.textarea<{ height?: number }>`
-  height: ${props => props.height || 52}px;
+  height: ${props => props.height || 80}px;
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
-  padding: 8px 10px;
+  padding: 12px 16px;
   color: ${COLORS.primary};
   font-family: 'Share Tech Mono', monospace;
-  font-size: 10px;
+  font-size: 14px;
   resize: none;
+  line-height: 1.5;
   
   &:focus {
     outline: none;
@@ -66,26 +68,29 @@ const TextArea = styled.textarea<{ height?: number }>`
 const StoryCard = styled.div`
   background: ${COLORS.card};
   border: 1px solid ${COLORS.border};
-  padding: 16px 18px;
+  padding: 40px;
   flex: 1;
   position: relative;
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
 `;
 
 const StoryBody = styled.div`
-  margin-bottom: 14px;
-  padding: 10px 12px;
+  margin-bottom: 32px;
+  padding: 24px;
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
 `;
 
 const StoryLine = styled.div`
   display: flex;
-  gap: 6px;
-  margin-bottom: 6px;
+  gap: 12px;
+  margin-bottom: 12px;
   align-items: flex-start;
+  font-size: 18px;
+  line-height: 1.4;
 `;
 
 const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -140,7 +145,7 @@ ${criteria.map(c => `- ${c}`).join('\n')}
     <ToolShell toolName="Story Generator" toolColor={COLORS.purple} activeNav="stories" onBack={onBack}>
       <StoryContainer>
         <InputPanel>
-          <Label color={COLORS.purple}>story inputs</Label>
+          <Label color={COLORS.purple} size={14}>story inputs</Label>
           <FormGroup>
             <Label>as a...</Label>
             <Input value={formData.asA} onChange={e => setFormData({...formData, asA: e.target.value})} />
@@ -155,48 +160,50 @@ ${criteria.map(c => `- ${c}`).join('\n')}
           </FormGroup>
           <FormGroup>
             <Label>acceptance criteria</Label>
-            <div style={{ display: 'flex', gap: 5 }}>
+            <div style={{ display: 'flex', gap: 10 }}>
               <Input style={{ flex: 1 }} value={newCriterion} onChange={e => setNewCriterion(e.target.value)} placeholder="New criterion..." />
-              <Btn onClick={addCriterion}>+</Btn>
+              <Btn onClick={addCriterion} style={{ padding: '0 24px' }}>+</Btn>
             </div>
           </FormGroup>
-          <div style={{ marginTop: 'auto', display: 'flex', gap: 8 }}>
-            <Btn primary onClick={handleGenerate} style={{ flex: 1, borderColor: COLORS.purple, color: COLORS.purple, background: 'rgba(184, 41, 255, 0.08)' }}>✦ generate</Btn>
-            <Btn onClick={() => setGenerated(false)}>clear</Btn>
+          <div style={{ marginTop: 'auto', display: 'flex', gap: 12 }}>
+            <Btn primary onClick={handleGenerate} style={{ flex: 1, borderColor: COLORS.purple, color: COLORS.purple, background: 'rgba(184, 41, 255, 0.08)', padding: '16px', fontSize: 14 }}>✦ generate</Btn>
+            <Btn onClick={() => setGenerated(false)} style={{ padding: '16px' }}>clear</Btn>
           </div>
         </InputPanel>
 
         <OutputPanel>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-            <Label color={COLORS.purple}>generated story</Label>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <Label color={COLORS.purple} size={14}>generated story</Label>
             <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${COLORS.border}, transparent)` }} />
-            <Btn style={{ fontSize: 8 }} onClick={handleCopy}>copy ⎘</Btn>
-            <Btn style={{ fontSize: 8 }} onClick={handleExport}>export</Btn>
+            <Btn style={{ fontSize: 11, padding: '6px 16px' }} onClick={handleCopy}>copy ⎘</Btn>
+            <Btn style={{ fontSize: 11, padding: '6px 16px' }} onClick={handleExport}>export</Btn>
           </div>
 
           <StoryCard>
-            <CornerBracket color={COLORS.purple} style={{ top: 0, left: 0 }} />
-            <CornerBracket color={COLORS.purple} style={{ bottom: 0, right: 0, transform: 'rotate(180deg)' }} />
+            <CornerBracket color={COLORS.purple} style={{ top: 0, left: 0 }} size={16} />
+            <CornerBracket color={COLORS.purple} style={{ bottom: 0, right: 0, transform: 'rotate(180deg)' }} size={16} />
 
             {generated ? (
               <>
                 <StoryBody>
-                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple }}>AS A</span> <span>{formData.asA}</span></StoryLine>
-                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple }}>I WANT</span> <span>{formData.iWant}</span></StoryLine>
-                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple }}>SO THAT</span> <span>{formData.soThat}</span></StoryLine>
+                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>AS A</span> <span className="wf-body">{formData.asA}</span></StoryLine>
+                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>I WANT</span> <span className="wf-body">{formData.iWant}</span></StoryLine>
+                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>SO THAT</span> <span className="wf-body">{formData.soThat}</span></StoryLine>
                 </StoryBody>
 
-                <Label style={{ display: 'block', marginBottom: 6 }}>acceptance criteria</Label>
-                {criteria.map((c, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 10 }}>
-                    <span style={{ color: COLORS.purple }}>•</span>
-                    <span>{c}</span>
-                  </div>
-                ))}
+                <Label style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>acceptance criteria</Label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                  {criteria.map((c, i) => (
+                    <div key={i} style={{ display: 'flex', gap: 12, fontSize: 16 }}>
+                      <span style={{ color: COLORS.purple }}>•</span>
+                      <span className="wf-body">{c}</span>
+                    </div>
+                  ))}
+                </div>
               </>
             ) : (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <Label style={{ color: COLORS.muted }}>Fill inputs and click generate</Label>
+                <Label style={{ color: COLORS.muted, fontSize: 16 }}>Fill inputs and click generate</Label>
               </div>
             )}
           </StoryCard>

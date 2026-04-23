@@ -31,11 +31,12 @@ export const GlobalStyles = createGlobalStyle`
     color: ${COLORS.primary};
     overflow: hidden;
     font-family: 'Rajdhani', sans-serif;
+    font-size: 16px;
   }
 
   .wf-label {
     font-family: 'Share Tech Mono', monospace;
-    font-size: 10px;
+    font-size: 13px;
     letter-spacing: 0.15em;
     text-transform: uppercase;
   }

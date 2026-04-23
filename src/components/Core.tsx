@@ -12,7 +12,7 @@ export const Box = styled.div<{ w?: string | number; h?: string | number; bg?: s
 
 export const Label = styled.span<{ color?: string; size?: number }>`
   font-family: 'Share Tech Mono', monospace;
-  font-size: ${props => props.size || 9}px;
+  font-size: ${props => props.size || 12}px;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   color: ${props => props.color || COLORS.muted};
@@ -20,10 +20,10 @@ export const Label = styled.span<{ color?: string; size?: number }>`
 
 export const Tag = styled.span<{ color?: string }>`
   font-family: 'Share Tech Mono', monospace;
-  font-size: 8px;
+  font-size: 11px;
   color: ${props => props.color || COLORS.cyan};
   border: 1px solid ${props => props.color || COLORS.cyan};
-  padding: 1px 5px;
+  padding: 2px 8px;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 `;
@@ -31,10 +31,10 @@ export const Tag = styled.span<{ color?: string }>`
 export const Btn = styled.div<{ primary?: boolean }>`
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 5px 12px;
+  gap: 6px;
+  padding: 8px 20px;
   font-family: 'Share Tech Mono', monospace;
-  font-size: 9px;
+  font-size: 12px;
   letter-spacing: 0.15em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -47,7 +47,7 @@ export const Btn = styled.div<{ primary?: boolean }>`
     color: ${COLORS.cyan};
     &:hover {
       background: rgba(0, 245, 245, 0.15);
-      box-shadow: 0 0 8px rgba(0, 245, 255, 0.3);
+      box-shadow: 0 0 10px rgba(0, 245, 255, 0.4);
     }
   ` : css`
     background: transparent;
@@ -64,7 +64,7 @@ export const LinesWrapper = styled.div<{ width?: string }>`
   width: ${props => props.width || '100%'};
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
 `;
 
 export const Line = styled.div<{ width?: string; color?: string }>`
@@ -93,7 +93,7 @@ const BracketSVG = styled.svg<{ color?: string }>`
   pointer-events: none;
 `;
 
-export const CornerBracket: React.FC<{ size?: number; color?: string; style?: React.CSSProperties }> = ({ size = 8, color, style }) => (
+export const CornerBracket: React.FC<{ size?: number; color?: string; style?: React.CSSProperties }> = ({ size = 10, color, style }) => (
   <BracketSVG 
     width={size * 2 + 2} 
     height={size * 2 + 2} 
@@ -105,17 +105,17 @@ export const CornerBracket: React.FC<{ size?: number; color?: string; style?: Re
       d={`M1,${size * 2 + 1} L1,1 L${size * 2 + 1},1`} 
       fill="none" 
       stroke={color || COLORS.cyan} 
-      strokeWidth="1.5"
+      strokeWidth="2"
     />
   </BracketSVG>
 );
 
 export const NavItem = styled.span<{ active?: boolean }>`
   font-family: 'Share Tech Mono', monospace;
-  font-size: 10px;
+  font-size: 13px;
   color: ${props => props.active ? COLORS.cyan : COLORS.secondary};
-  border-bottom: ${props => props.active ? `1px solid ${COLORS.cyan}` : 'none'};
-  padding-bottom: 2px;
+  border-bottom: ${props => props.active ? `2px solid ${COLORS.cyan}` : 'none'};
+  padding-bottom: 4px;
   letter-spacing: 0.1em;
   cursor: pointer;
   transition: color 0.2s;

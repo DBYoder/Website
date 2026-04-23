@@ -181,6 +181,17 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   };
 
+  const handleStartNew = () => {
+    if (username) {
+      const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+      setRoomCode(newCode);
+      socket.emit('retro:join', { roomId: newCode, username });
+      setIsJoined(true);
+    } else {
+      alert("Please enter a username first");
+    }
+  };
+
   const handleAddNote = (colKey: string) => {
     const text = prompt("Enter note text:");
     if (text) {
@@ -212,8 +223,17 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <Box w={400} style={{ padding: 48, display: 'flex', flexDirection: 'column', gap: 24 }}>
             <Label color={COLORS.magenta} size={16}>retro session</Label>
             <Input placeholder="USERNAME" value={username} onChange={e => setUsername(e.target.value)} />
-            <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} style={{ width: '100%' }} />
-            <Btn primary onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)', fontSize: 14, padding: '14px' }}>Enter Retro →</Btn>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <Btn primary onClick={handleStartNew} style={{ width: '100%', justifyContent: 'center', borderColor: COLORS.magenta, color: COLORS.magenta, background: 'rgba(255,0,170,0.08)', fontSize: 14, padding: '14px' }}>Start New Session +</Btn>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '8px 0' }}>
+                <div style={{ flex: 1, height: 1, background: COLORS.border }} />
+                <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>OR JOIN EXISTING</span>
+                <div style={{ flex: 1, height: 1, background: COLORS.border }} />
+              </div>
+              <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} style={{ width: '100%' }} />
+              <Btn onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}>Join Session →</Btn>
+            </div>
           </Box>
         </JoinOverlay>
       </ToolShell>

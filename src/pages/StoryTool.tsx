@@ -130,8 +130,8 @@ const BacklogItem = styled.div`
   background: ${COLORS.elevated};
   border: 1px solid ${COLORS.border};
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 8px;
 `;
 
 const ModalOverlay = styled.div`
@@ -437,7 +437,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                         </div>
                         <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.4, width: '100%' }}>
                           <span style={{ color: COLORS.muted }}>AS A</span> {item.asA}<br />
-                          <span style={{ color: COLORS.muted }}>I WANT</span> {item.iWant}<br />
+                          <span style={{ color: COLORS.muted }}>I WANT TO</span> {item.iWant}<br />
                           <span style={{ color: COLORS.muted }}>SO THAT</span> {item.soThat}
                         </div>
                       </BacklogItem>

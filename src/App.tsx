@@ -6,6 +6,7 @@ import LandingPage from './pages/LandingPage';
 import PokerTool from './pages/PokerTool';
 import RetroTool from './pages/RetroTool';
 import StoryTool from './pages/StoryTool';
+import WBSTool from './pages/WBSTool';
 
 const AppContainer = styled.div`
   width: 100vw;
@@ -23,6 +24,7 @@ const NavigationWrapper: React.FC = () => {
       <Route path="/poker" element={<PokerTool onBack={() => navigate('/')} />} />
       <Route path="/retro" element={<RetroTool onBack={() => navigate('/')} />} />
       <Route path="/stories" element={<StoryTool onBack={() => navigate('/')} />} />
+      <Route path="/wbs" element={<WBSTool onBack={() => navigate('/')} />} />
       <Route path="*" element={<LandingPage onLaunch={(tool) => navigate(`/${tool}`)} />} />
     </Routes>
   );

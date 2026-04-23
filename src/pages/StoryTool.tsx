@@ -32,6 +32,8 @@ interface Story {
   soThat: string;
   criteria: string[];
   points?: string;
+  epic?: string;
+  feature?: string;
 }
 
 interface FormData {
@@ -509,6 +511,12 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                             remove
                           </Btn>
                         </div>
+                        {(item.epic || item.feature) && (
+                          <div style={{ display: 'flex', gap: 6, marginBottom: 6, flexWrap: 'wrap' }}>
+                            {item.epic && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta, border: `1px solid ${COLORS.magenta}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{item.epic}</span>}
+                            {item.feature && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.cyan, border: `1px solid ${COLORS.cyan}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{item.feature}</span>}
+                          </div>
+                        )}
                         <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.4, width: '100%' }}>
                           <span style={{ color: COLORS.muted }}>AS A</span> {item.asA}<br />
                           <span style={{ color: COLORS.muted }}>I WANT TO</span> {item.iWant}<br />

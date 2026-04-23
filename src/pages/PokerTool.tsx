@@ -21,6 +21,8 @@ interface Story {
   soThat: string;
   criteria: string[];
   points?: string;
+  epic?: string;
+  feature?: string;
 }
 
 interface PokerSession {
@@ -544,6 +546,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </div>
             {session.currentStory && (
               <div style={{ marginTop: 12, padding: 24, background: 'rgba(255,255,255,0.03)', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {(session.currentStory.epic || session.currentStory.feature) && (
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', paddingBottom: 12, borderBottom: `1px solid ${COLORS.border}` }}>
+                    {session.currentStory.epic && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta, border: `1px solid ${COLORS.magenta}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{session.currentStory.epic}</span>}
+                    {session.currentStory.feature && <span className="wf-mono" style={{ fontSize: 10, color: COLORS.cyan, border: `1px solid ${COLORS.cyan}`, padding: '1px 6px', letterSpacing: '0.1em' }}>{session.currentStory.feature}</span>}
+                  </div>
+                )}
                 <div style={{ display: 'flex', gap: 12, alignItems: 'flex-start' }}>
                   <span className="wf-mono" style={{ color: COLORS.cyan, fontSize: 13, minWidth: 80 }}>AS A</span>
                   <span className="wf-body" style={{ fontSize: 16, color: COLORS.primary }}>{session.currentStory.asA}</span>

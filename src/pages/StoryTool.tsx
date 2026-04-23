@@ -115,7 +115,7 @@ const StoryCard = styled.div`
   position: relative;
   display: flex;
   flex-direction: column;
-  overflow: hidden;
+  overflow-y: auto;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
 `;
 
@@ -140,9 +140,6 @@ const BacklogList = styled.div`
   display: flex;
   flex-direction: column;
   gap: 10px;
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
 `;
 
 const BacklogItem = styled.div<{ incomplete?: boolean }>`
@@ -210,7 +207,8 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [copyLabel, setCopyLabel] = useState('copy draft ⎘');
   const [confirmClear, setConfirmClear] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState({ asA: '', iWant: '', soThat: '' });
+  const [editDraft, setEditDraft] = useState({ asA: '', iWant: '', soThat: '', criteria: [] as string[] });
+  const [newEditCriterion, setNewEditCriterion] = useState('');
 
   // Poker launch modal state
   const [showPokerModal, setShowPokerModal] = useState(false);
@@ -278,7 +276,15 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const startEdit = (item: Story) => {
     setEditingId(item.id);
-    setEditDraft({ asA: item.asA, iWant: item.iWant, soThat: item.soThat });
+    setEditDraft({ asA: item.asA, iWant: item.iWant, soThat: item.soThat, criteria: [...(item.criteria ?? [])] });
+    setNewEditCriterion('');
+  };
+
+  const addEditCriterion = () => {
+    const text = newEditCriterion.trim();
+    if (!text) return;
+    setEditDraft(d => ({ ...d, criteria: [...d.criteria, text] }));
+    setNewEditCriterion('');
   };
 
   const saveEdit = (id: string) => {
@@ -287,6 +293,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       asA: editDraft.asA,
       iWant: editDraft.iWant,
       soThat: editDraft.soThat,
+      criteria: editDraft.criteria,
       title: `${editDraft.asA}: ${editDraft.iWant.slice(0, 30)}${editDraft.iWant.length > 30 ? '...' : ''}`,
     }));
     setEditingId(null);
@@ -560,6 +567,31 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               <div>
                                 <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>SO THAT</Label>
                                 <TextArea value={editDraft.soThat} onChange={e => setEditDraft({ ...editDraft, soThat: e.target.value })} aria-label="Edit so that" />
+                              </div>
+                              <div>
+                                <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>ACCEPTANCE CRITERIA</Label>
+                                <div style={{ display: 'flex', gap: 8, marginBottom: 6 }}>
+                                  <Input
+                                    style={{ flex: 1, height: 32, fontSize: 12 }}
+                                    value={newEditCriterion}
+                                    onChange={e => setNewEditCriterion(e.target.value)}
+                                    onKeyDown={e => e.key === 'Enter' && addEditCriterion()}
+                                    placeholder="Add criterion..."
+                                    aria-label="New criterion"
+                                  />
+                                  <Btn onClick={addEditCriterion} style={{ padding: '0 12px', fontSize: 14 }} aria-label="Add criterion">+</Btn>
+                                </div>
+                                {editDraft.criteria.map((c, ci) => (
+                                  <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                                    <span style={{ color: COLORS.purple, fontSize: 11 }}>•</span>
+                                    <span className="wf-mono" style={{ fontSize: 11, color: COLORS.secondary, flex: 1 }}>{c}</span>
+                                    <Btn
+                                      onClick={() => setEditDraft(d => ({ ...d, criteria: d.criteria.filter((_, j) => j !== ci) }))}
+                                      style={{ fontSize: 9, padding: '2px 6px' }}
+                                      aria-label={`Remove criterion: ${c}`}
+                                    >✕</Btn>
+                                  </div>
+                                ))}
                               </div>
                               <div style={{ display: 'flex', gap: 8 }}>
                                 <Btn primary onClick={() => saveEdit(item.id)} style={{ flex: 1, justifyContent: 'center', fontSize: 11, padding: '8px' }} aria-label="Save edits">save</Btn>

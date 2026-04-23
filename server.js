@@ -19,11 +19,13 @@ const PORT = process.env.PORT || 3000;
 
 app.use(express.static(path.join(__dirname, 'dist')));
 
-// In-memory store for sessions
 const sessions = {
   poker: {},
   retro: {}
 };
+
+// Maps socket.id → retro roomId for disconnect cleanup
+const socketRetroRoom = {};
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -31,7 +33,7 @@ io.on('connection', (socket) => {
   // --- Planning Poker ---
   socket.on('poker:join', ({ roomId, username }) => {
     socket.join(`poker:${roomId}`);
-    
+
     if (!sessions.poker[roomId]) {
       sessions.poker[roomId] = {
         participants: {},
@@ -40,7 +42,7 @@ io.on('connection', (socket) => {
         backlog: []
       };
     }
-    
+
     sessions.poker[roomId].participants[socket.id] = {
       username,
       vote: null,
@@ -101,18 +103,15 @@ io.on('connection', (socket) => {
   socket.on('poker:completeStory', ({ roomId, storyId, points }) => {
     const session = sessions.poker[roomId];
     if (session) {
-      // Find and update the story in the backlog
       const storyIndex = session.backlog.findIndex(s => s.id === storyId);
       if (storyIndex !== -1) {
         session.backlog[storyIndex].points = points;
       }
 
-      // Move to next story if available
       const nextStory = session.backlog[storyIndex + 1];
       session.currentStory = nextStory || null;
       session.gameState = 'voting';
-      
-      // Reset votes
+
       Object.values(session.participants).forEach(p => {
         p.vote = null;
         p.voted = false;
@@ -123,9 +122,10 @@ io.on('connection', (socket) => {
   });
 
   // --- Retro Board ---
-  socket.on('retro:join', ({ roomId, username }) => {
+  socket.on('retro:join', ({ roomId }) => {
     socket.join(`retro:${roomId}`);
-    
+    socketRetroRoom[socket.id] = roomId;
+
     if (!sessions.retro[roomId]) {
       sessions.retro[roomId] = {
         columns: {
@@ -134,19 +134,25 @@ io.on('connection', (socket) => {
           actionItems: []
         },
         timer: {
-          remaining: 0,
-          isRunning: false
+          isRunning: false,
+          durationSeconds: 0,
+          startedAt: null
         }
       };
     }
-    
+
     io.to(`retro:${roomId}`).emit('retro:state', sessions.retro[roomId]);
   });
 
   socket.on('retro:addCard', ({ roomId, colKey, text, username }) => {
     const session = sessions.retro[roomId];
     if (session) {
-      session.columns[colKey].push({ text, votes: 0, owner: username, id: Math.random().toString(36).substr(2, 9) });
+      session.columns[colKey].push({
+        text,
+        votes: 0,
+        owner: username,
+        id: Math.random().toString(36).substr(2, 9)
+      });
       io.to(`retro:${roomId}`).emit('retro:state', session);
     }
   });
@@ -160,17 +166,28 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('retro:startTimer', ({ roomId, duration }) => {
+  socket.on('retro:startTimer', ({ roomId, durationSeconds }) => {
     const session = sessions.retro[roomId];
     if (session) {
-      session.timer.remaining = duration;
+      session.timer.durationSeconds = durationSeconds;
+      session.timer.startedAt = Date.now();
       session.timer.isRunning = true;
       io.to(`retro:${roomId}`).emit('retro:state', session);
     }
   });
 
+  socket.on('retro:stopTimer', ({ roomId }) => {
+    const session = sessions.retro[roomId];
+    if (session) {
+      session.timer.isRunning = false;
+      session.timer.durationSeconds = 0;
+      session.timer.startedAt = null;
+      io.to(`retro:${roomId}`).emit('retro:state', session);
+    }
+  });
+
   socket.on('disconnect', () => {
-    // Clean up poker
+    // Clean up poker sessions
     for (const roomId in sessions.poker) {
       if (sessions.poker[roomId].participants[socket.id]) {
         delete sessions.poker[roomId].participants[socket.id];
@@ -179,6 +196,16 @@ io.on('connection', (socket) => {
         } else {
           io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
         }
+      }
+    }
+
+    // Clean up retro sessions
+    const retroRoomId = socketRetroRoom[socket.id];
+    if (retroRoomId) {
+      delete socketRetroRoom[socket.id];
+      const room = io.sockets.adapter.rooms.get(`retro:${retroRoomId}`);
+      if (!room || room.size === 0) {
+        delete sessions.retro[retroRoomId];
       }
     }
   });

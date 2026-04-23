@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { io, Socket } from 'socket.io-client';
 import { useLocation } from 'react-router-dom';
@@ -6,6 +6,33 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
 
+// --- Types ---
+interface PokerParticipant {
+  username: string;
+  vote: string | null;
+  voted: boolean;
+}
+
+interface Story {
+  id: string;
+  title: string;
+  asA: string;
+  iWant: string;
+  soThat: string;
+  criteria: string[];
+  points?: string;
+}
+
+interface PokerSession {
+  participants: Record<string, PokerParticipant>;
+  gameState: 'voting' | 'revealed';
+  currentStory: Story | null;
+  backlog: Story[];
+}
+
+type ConnectionStatus = 'connecting' | 'connected' | 'error';
+
+// --- Styles ---
 const PokerContainer = styled.div`
   flex: 1;
   display: flex;
@@ -35,7 +62,9 @@ const CardDeck = styled.div`
   margin-bottom: 40px;
 `;
 
-const Card = styled.div<{ active?: boolean; color: string }>`
+const Card = styled.button<{ active?: boolean; color: string }>`
+  appearance: none;
+  -webkit-appearance: none;
   width: 80px;
   height: 110px;
   background: ${props => props.active ? `rgba(${parseInt(props.color.slice(1,3), 16)}, ${parseInt(props.color.slice(3,5), 16)}, ${parseInt(props.color.slice(5,7), 16)}, 0.12)` : COLORS.card};
@@ -48,7 +77,7 @@ const Card = styled.div<{ active?: boolean; color: string }>`
   position: relative;
   cursor: pointer;
   transition: all 0.2s;
-  
+
   &:hover {
     border-color: ${props => props.color};
     transform: translateY(-4px);
@@ -75,7 +104,11 @@ const Avatar = styled.div`
   justify-content: center;
 `;
 
-const BacklogItem = styled.div<{ active?: boolean; hasPoints?: boolean }>`
+const BacklogItem = styled.button<{ active?: boolean }>`
+  appearance: none;
+  -webkit-appearance: none;
+  width: 100%;
+  text-align: left;
   padding: 10px 14px;
   background: ${props => props.active ? 'rgba(0, 245, 255, 0.08)' : 'transparent'};
   border: 1px solid ${props => props.active ? COLORS.cyan : 'transparent'};
@@ -84,7 +117,7 @@ const BacklogItem = styled.div<{ active?: boolean; hasPoints?: boolean }>`
   display: flex;
   justify-content: space-between;
   align-items: center;
-  
+
   &:hover {
     background: rgba(0, 245, 255, 0.04);
   }
@@ -134,88 +167,128 @@ const Input = styled.input`
   font-family: 'Share Tech Mono', monospace;
   font-size: 18px;
   width: 100%;
-  
+
   &:focus {
     outline: none;
     border-color: ${COLORS.cyan};
   }
 `;
 
-let socket: Socket;
+const ErrorText = styled.span`
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: ${COLORS.magenta};
+  letter-spacing: 0.1em;
+`;
 
 const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const location = useLocation();
+  const socketRef = useRef<Socket | null>(null);
+  const initialSearchRef = useRef(location.search);
+
   const [roomCode, setRoomCode] = useState('');
   const [username, setUsername] = useState('');
   const [isJoined, setIsJoined] = useState(false);
-  const [session, setSession] = useState<any>(null);
+  const [session, setSession] = useState<PokerSession | null>(null);
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
   const [customPoints, setCustomPoints] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
+  const [joinError, setJoinError] = useState('');
 
   useEffect(() => {
-    socket = io(window.location.origin);
-    
-    socket.on('poker:state', (newState) => {
-      setSession(newState);
-    });
+    const socket = io(window.location.origin);
+    socketRef.current = socket;
 
-    const params = new URLSearchParams(location.search);
+    socket.on('connect', () => setConnectionStatus('connected'));
+    socket.on('disconnect', () => setConnectionStatus('connecting'));
+    socket.on('connect_error', () => setConnectionStatus('error'));
+    socket.on('poker:state', (newState: PokerSession) => setSession(newState));
+
+    // Read URL params once on initial mount
+    const params = new URLSearchParams(initialSearchRef.current);
     const urlRoom = params.get('room');
     const urlUser = params.get('user');
-    
+
     if (urlRoom && urlUser) {
-      setRoomCode(urlRoom.toUpperCase());
+      const room = urlRoom.toUpperCase();
+      setRoomCode(room);
       setUsername(urlUser);
-      socket.emit('poker:join', { roomId: urlRoom.toUpperCase(), username: urlUser });
+      socket.emit('poker:join', { roomId: room, username: urlUser });
       setIsJoined(true);
     }
 
     return () => {
       socket.disconnect();
+      socketRef.current = null;
     };
-  }, [location]);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleJoin = () => {
-    if (roomCode && username) {
-      socket.emit('poker:join', { roomId: roomCode.toUpperCase(), username });
-      setIsJoined(true);
-    }
+    const trimRoom = roomCode.trim().toUpperCase();
+    const trimUser = username.trim();
+    if (!trimUser) { setJoinError('Username is required'); return; }
+    if (!trimRoom || !/^[A-Z0-9]+$/.test(trimRoom)) { setJoinError('Enter a valid room code'); return; }
+    setJoinError('');
+    setRoomCode(trimRoom);
+    socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser });
+    setIsJoined(true);
   };
 
   const handleStartNew = () => {
-    if (username) {
-      const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-      setRoomCode(newCode);
-      socket.emit('poker:join', { roomId: newCode, username });
-      setIsJoined(true);
-    } else {
-      alert("Please enter a username first");
-    }
+    const trimUser = username.trim();
+    if (!trimUser) { setJoinError('Username is required'); return; }
+    setJoinError('');
+    const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
+    setRoomCode(newCode);
+    socketRef.current?.emit('poker:join', { roomId: newCode, username: trimUser });
+    setIsJoined(true);
   };
 
   const handleVote = (val: string) => {
     setSelectedCard(val);
-    socket.emit('poker:vote', { roomId: roomCode, vote: val });
+    socketRef.current?.emit('poker:vote', { roomId: roomCode, vote: val });
   };
 
   const handleReveal = () => {
-    socket.emit('poker:reveal', roomCode);
+    socketRef.current?.emit('poker:reveal', roomCode);
   };
 
   const handleComplete = (points: string) => {
-    if (session.currentStory) {
-      socket.emit('poker:completeStory', { 
-        roomId: roomCode, 
-        storyId: session.currentStory.id, 
-        points 
-      });
-      setSelectedCard(null);
-      setCustomPoints('');
-    }
+    if (!session?.currentStory) return;
+    socketRef.current?.emit('poker:completeStory', {
+      roomId: roomCode,
+      storyId: session.currentStory.id,
+      points
+    });
+    setSelectedCard(null);
+    setCustomPoints('');
   };
 
-  const selectStory = (story: any) => {
-    socket.emit('poker:selectStory', { roomId: roomCode, story });
+  const selectStory = (story: Story) => {
+    socketRef.current?.emit('poker:selectStory', { roomId: roomCode, story });
+  };
+
+  const handleExport = () => {
+    if (!session) return;
+    const date = new Date().toLocaleDateString();
+    const estimated = session.backlog.filter(s => s.points);
+    const lines = [
+      'PLANNING POKER EXPORT',
+      `Date: ${date}  |  Room: ${roomCode}`,
+      '',
+      '=== STORY POINTS ===',
+      ...session.backlog.map(s => `${s.points ? '✓' : '○'} ${s.title}: ${s.points ? s.points + ' pts' : 'unestimated'}`),
+      '',
+      `Estimated: ${estimated.length} / ${session.backlog.length} stories`,
+    ].join('\n');
+
+    const blob = new Blob([lines], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `poker-${roomCode}-${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   if (!isJoined) {
@@ -224,42 +297,79 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <JoinOverlay>
           <Box w={400} style={{ padding: 48, display: 'flex', flexDirection: 'column', gap: 24 }}>
             <Label color={COLORS.cyan} size={16}>poker session</Label>
-            <Input placeholder="USERNAME" value={username} onChange={e => setUsername(e.target.value)} />
+            <Input
+              placeholder="USERNAME"
+              value={username}
+              onChange={e => setUsername(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleStartNew()}
+              aria-label="Username"
+            />
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              <Btn primary onClick={handleStartNew} style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}>Start New Session +</Btn>
+              <Btn
+                primary
+                onClick={handleStartNew}
+                style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}
+                aria-label="Start new poker session"
+              >
+                Start New Session +
+              </Btn>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, margin: '8px 0' }}>
                 <div style={{ flex: 1, height: 1, background: COLORS.border }} />
                 <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>OR JOIN EXISTING</span>
                 <div style={{ flex: 1, height: 1, background: COLORS.border }} />
               </div>
-              <Input placeholder="ROOM CODE" value={roomCode} onChange={e => setRoomCode(e.target.value)} />
-              <Btn onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}>Join Session →</Btn>
+              <Input
+                placeholder="ROOM CODE"
+                value={roomCode}
+                onChange={e => setRoomCode(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleJoin()}
+                aria-label="Room code"
+              />
+              <Btn
+                onClick={handleJoin}
+                style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}
+                aria-label="Join existing session"
+              >
+                Join Session →
+              </Btn>
             </div>
+
+            {joinError && <ErrorText role="alert">{joinError}</ErrorText>}
+            {connectionStatus === 'error' && (
+              <ErrorText role="alert">Cannot connect to server. Please refresh.</ErrorText>
+            )}
           </Box>
         </JoinOverlay>
       </ToolShell>
     );
   }
 
-  if (!session) return <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>Loading...</ToolShell>;
+  if (!session) {
+    return (
+      <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>
+        <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span className="wf-mono" style={{ color: COLORS.muted }}>connecting...</span>
+        </div>
+      </ToolShell>
+    );
+  }
 
   const participants = Object.values(session.participants);
   const cards = ['1', '2', '3', '5', '8', '13', '21', '?', '☕'];
-  const votedCount = participants.filter((p: any) => p.voted).length;
+  const votedCount = participants.filter(p => p.voted).length;
 
-  // Stats calculation
   const numericVotes = participants
-    .map((p: any) => parseFloat(p.vote))
-    .filter((v: number) => !isNaN(v));
-  
-  const average = numericVotes.length > 0 
+    .map(p => parseFloat(p.vote ?? ''))
+    .filter(v => !isNaN(v));
+
+  const average = numericVotes.length > 0
     ? (numericVotes.reduce((a, b) => a + b, 0) / numericVotes.length).toFixed(1)
     : '-';
 
-  const voteCounts: any = {};
-  numericVotes.forEach(v => voteCounts[v] = (voteCounts[v] || 0) + 1);
-  let consensus: any = '-';
+  const voteCounts: Record<string, number> = {};
+  numericVotes.forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
+  let consensus = '-';
   let maxCount = 0;
   for (const v in voteCounts) {
     if (voteCounts[v] > maxCount) {
@@ -273,28 +383,51 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <PokerContainer>
         <LeftPanel>
           <div style={{ padding: '24px', borderBottom: `1px solid ${COLORS.border}` }}>
-            <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>session: {roomCode}</Label>
+            <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
+              session: {roomCode}
+            </Label>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <Tag color={session.gameState === 'voting' ? COLORS.lime : COLORS.magenta}>
                 {session.gameState.toUpperCase()}
               </Tag>
-              {session.gameState === 'voting' && <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>{votedCount}/{participants.length} voted</span>}
+              {session.gameState === 'voting' && (
+                <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>
+                  {votedCount}/{participants.length} voted
+                </span>
+              )}
+              {connectionStatus !== 'connected' && (
+                <Tag color={connectionStatus === 'error' ? COLORS.magenta : COLORS.yellow} role="status">
+                  {connectionStatus === 'error' ? 'offline' : '...'}
+                </Tag>
+              )}
             </div>
           </div>
 
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
-            <Label style={{ display: 'block', marginBottom: 12 }}>backlog</Label>
-            <div style={{ maxHeight: 200, overflowY: 'auto' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+              <Label>backlog</Label>
+              {session.backlog.some(s => s.points) && (
+                <Btn onClick={handleExport} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Export story points">
+                  export ↓
+                </Btn>
+              )}
+            </div>
+            <div style={{ maxHeight: 200, overflowY: 'auto' }} role="list" aria-label="Story backlog">
               {session.backlog.length === 0 ? (
                 <div className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>No stories pushed yet.</div>
               ) : (
-                session.backlog.map((story: any) => (
-                  <BacklogItem 
-                    key={story.id} 
+                session.backlog.map((story) => (
+                  <BacklogItem
+                    key={story.id}
                     active={session.currentStory?.id === story.id}
                     onClick={() => selectStory(story)}
+                    role="listitem"
+                    aria-label={`Select story: ${story.title}${story.points ? ` (${story.points} pts)` : ''}`}
+                    aria-pressed={session.currentStory?.id === story.id}
                   >
-                    <div className="wf-mono" style={{ fontSize: 11, color: session.currentStory?.id === story.id ? COLORS.cyan : COLORS.secondary }}>{story.title}</div>
+                    <div className="wf-mono" style={{ fontSize: 11, color: session.currentStory?.id === story.id ? COLORS.cyan : COLORS.secondary }}>
+                      {story.title}
+                    </div>
                     {story.points && <Tag color={COLORS.lime}>{story.points}</Tag>}
                   </BacklogItem>
                 ))
@@ -303,23 +436,29 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           <div style={{ padding: '20px 24px', flex: 1, overflowY: 'auto' }}>
-            <Label style={{ display: 'block', marginBottom: 16 }}>{session.gameState === 'voting' ? 'participants' : 'votes'}</Label>
-            {participants.map((p: any, i: number) => (
-              <ParticipantItem key={i}>
-                <Avatar>
-                  <span className="wf-mono" style={{ fontSize: 14, color: COLORS.secondary }}>{p.username[0].toUpperCase()}</span>
+            <Label style={{ display: 'block', marginBottom: 16 }}>
+              {session.gameState === 'voting' ? 'participants' : 'votes'}
+            </Label>
+            {participants.map((p, i) => (
+              <ParticipantItem key={i} aria-label={`${p.username}${p.voted ? ' — voted' : ' — waiting'}`}>
+                <Avatar aria-hidden="true">
+                  <span className="wf-mono" style={{ fontSize: 14, color: COLORS.secondary }}>
+                    {p.username[0].toUpperCase()}
+                  </span>
                 </Avatar>
                 <span className="wf-mono" style={{ fontSize: 13, color: COLORS.secondary, flex: 1 }}>{p.username}</span>
                 {session.gameState === 'voting' ? (
                   p.voted ? (
                     <div style={{ width: 20, height: 20, background: COLORS.elevated, border: `1px solid ${COLORS.cyan}`, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                      <span style={{ fontSize: 12, color: COLORS.cyan }}>✓</span>
+                      <span style={{ fontSize: 12, color: COLORS.cyan }} aria-hidden="true">✓</span>
                     </div>
                   ) : (
-                    <div style={{ width: 20, height: 20, background: COLORS.elevated, border: `1px dashed ${COLORS.muted}` }} />
+                    <div style={{ width: 20, height: 20, background: COLORS.elevated, border: `1px dashed ${COLORS.muted}` }} aria-hidden="true" />
                   )
                 ) : (
-                  <span className="wf-retro" style={{ fontSize: 24, color: COLORS.cyan }}>{p.vote || '?'}</span>
+                  <span className="wf-retro" style={{ fontSize: 24, color: COLORS.cyan }} aria-label={`Vote: ${p.vote ?? '?'}`}>
+                    {p.vote || '?'}
+                  </span>
                 )}
               </ParticipantItem>
             ))}
@@ -330,7 +469,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div style={{ marginBottom: 32 }}>
             <Label color={COLORS.cyan} size={14}>current story</Label>
             <div className="wf-title" style={{ fontSize: 24, color: COLORS.primary, marginTop: 8 }}>
-              {session.currentStory ? session.currentStory.title : "No story selected"}
+              {session.currentStory ? session.currentStory.title : 'No story selected'}
             </div>
             {session.currentStory && (
               <div style={{ marginTop: 12, padding: 24, background: 'rgba(255,255,255,0.03)', border: `1px solid ${COLORS.border}`, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -346,14 +485,14 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <span className="wf-mono" style={{ color: COLORS.cyan, fontSize: 13, minWidth: 80 }}>SO THAT</span>
                   <span className="wf-body" style={{ fontSize: 16, color: COLORS.primary }}>{session.currentStory.soThat}</span>
                 </div>
-                
+
                 {session.currentStory.criteria && session.currentStory.criteria.length > 0 && (
                   <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${COLORS.border}` }}>
                     <Label style={{ display: 'block', marginBottom: 12 }}>Acceptance Criteria</Label>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {session.currentStory.criteria.map((c: string, i: number) => (
+                      {session.currentStory.criteria.map((c, i) => (
                         <div key={i} style={{ display: 'flex', gap: 12, fontSize: 14 }}>
-                          <span style={{ color: COLORS.cyan }}>•</span>
+                          <span style={{ color: COLORS.cyan }} aria-hidden="true">•</span>
                           <span className="wf-body">{c}</span>
                         </div>
                       ))}
@@ -371,54 +510,80 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${COLORS.border}, transparent)` }} />
               </div>
 
-              <CardDeck>
+              <CardDeck role="group" aria-label="Voting cards">
                 {cards.map((val) => (
-                  <Card 
-                    key={val} 
-                    active={selectedCard === val} 
+                  <Card
+                    key={val}
+                    active={selectedCard === val}
                     color={COLORS.cyan}
                     onClick={() => handleVote(val)}
+                    aria-label={`Vote ${val}`}
+                    aria-pressed={selectedCard === val}
                   >
-                    <span className="wf-title" style={{ fontSize: selectedCard === val ? 36 : 28, color: selectedCard === val ? COLORS.cyan : COLORS.secondary }}>{val}</span>
+                    <span className="wf-title" style={{ fontSize: selectedCard === val ? 36 : 28, color: selectedCard === val ? COLORS.cyan : COLORS.secondary }}>
+                      {val}
+                    </span>
                     {selectedCard === val && <CornerBracket color={COLORS.cyan} style={{ top: 0, left: 0 }} size={12} />}
                   </Card>
                 ))}
               </CardDeck>
 
               <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                <Btn primary onClick={handleReveal} style={{ padding: '16px 40px', fontSize: 14 }}>reveal votes →</Btn>
+                <Btn primary onClick={handleReveal} style={{ padding: '16px 40px', fontSize: 14 }} aria-label="Reveal all votes">
+                  reveal votes →
+                </Btn>
               </div>
             </>
           ) : (
             <ConsensusBox>
               <CornerBracket color={COLORS.cyan} style={{ top: 0, left: 0 }} size={16} />
               <Label color={COLORS.cyan} size={14}>voting results</Label>
-              
+
               <StatsGrid>
                 <StatItem>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Average</Label>
-                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.primary }}>{average}</div>
+                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.primary }} aria-label={`Average: ${average}`}>{average}</div>
                 </StatItem>
                 <StatItem>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Consensus</Label>
-                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.cyan }}>{consensus}</div>
+                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.cyan }} aria-label={`Consensus: ${consensus}`}>{consensus}</div>
                 </StatItem>
                 <StatItem>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Voted</Label>
-                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.primary }}>{numericVotes.length}</div>
+                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.primary }} aria-label={`${numericVotes.length} numeric votes`}>{numericVotes.length}</div>
                 </StatItem>
               </StatsGrid>
 
               <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end' }}>
                 <div style={{ flex: 1 }}>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Accept Consensus ({consensus})</Label>
-                  <Btn primary onClick={() => handleComplete(consensus.toString())} style={{ width: '100%', justifyContent: 'center', padding: '16px' }}>Accept {consensus} pts</Btn>
+                  <Btn
+                    primary
+                    onClick={() => handleComplete(consensus)}
+                    style={{ width: '100%', justifyContent: 'center', padding: '16px' }}
+                    aria-label={`Accept consensus of ${consensus} points`}
+                  >
+                    Accept {consensus} pts
+                  </Btn>
                 </div>
                 <div style={{ flex: 1 }}>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Custom Value</Label>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    <Input placeholder="PTS" value={customPoints} onChange={e => setCustomPoints(e.target.value)} style={{ width: 80, padding: '12px' }} />
-                    <Btn onClick={() => handleComplete(customPoints)} style={{ flex: 1, justifyContent: 'center' }}>Set Points</Btn>
+                    <Input
+                      placeholder="PTS"
+                      value={customPoints}
+                      onChange={e => setCustomPoints(e.target.value)}
+                      onKeyDown={e => e.key === 'Enter' && handleComplete(customPoints)}
+                      style={{ width: 80, padding: '12px' }}
+                      aria-label="Custom story points"
+                    />
+                    <Btn
+                      onClick={() => handleComplete(customPoints)}
+                      style={{ flex: 1, justifyContent: 'center' }}
+                      aria-label="Set custom points"
+                    >
+                      Set Points
+                    </Btn>
                   </div>
                 </div>
               </div>

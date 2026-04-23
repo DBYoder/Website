@@ -28,7 +28,9 @@ export const Tag = styled.span<{ color?: string }>`
   text-transform: uppercase;
 `;
 
-export const Btn = styled.div<{ primary?: boolean }>`
+export const Btn = styled.button.attrs(() => ({ type: 'button' }))<{ primary?: boolean }>`
+  appearance: none;
+  -webkit-appearance: none;
   display: inline-flex;
   align-items: center;
   gap: 6px;

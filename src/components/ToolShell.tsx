@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { Link } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
@@ -75,6 +75,14 @@ interface ToolShellProps {
 }
 
 const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, children }) => {
+  const [copied, setCopied] = useState(false);
+
+  const handleShareLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
   return (
     <ShellLayout>
       <Sidebar>
@@ -123,7 +131,9 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
             <Tag color={toolColor}>LIVE</Tag>
           </div>
           <div style={{ display: 'flex', gap: 16 }}>
-            <Btn style={{ fontSize: 12 }}>share link</Btn>
+            <Btn style={{ fontSize: 12 }} onClick={handleShareLink} aria-label="Copy share link to clipboard">
+              {copied ? 'copied!' : 'share link'}
+            </Btn>
             <Btn onClick={onBack} style={{ fontSize: 12 }}>← back</Btn>
           </div>
         </TopBar>

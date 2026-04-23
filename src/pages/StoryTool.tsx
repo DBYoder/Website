@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { io, Socket } from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
@@ -6,6 +6,26 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Btn, Label, CornerBracket } from '../components/Core';
 
+// --- Types ---
+interface Story {
+  id: string;
+  title: string;
+  asA: string;
+  iWant: string;
+  soThat: string;
+  criteria: string[];
+  points?: string;
+}
+
+interface FormData {
+  asA: string;
+  iWant: string;
+  soThat: string;
+  priority: string;
+  points: string;
+}
+
+// --- Styles ---
 const StoryContainer = styled.div`
   flex: 1;
   display: flex;
@@ -20,6 +40,7 @@ const InputPanel = styled.div`
   padding: 32px;
   gap: 24px;
   background: ${COLORS.surface};
+  overflow-y: auto;
 `;
 
 const OutputPanel = styled.div`
@@ -43,7 +64,7 @@ const Input = styled.input`
   color: ${COLORS.primary};
   font-family: 'Share Tech Mono', monospace;
   font-size: 14px;
-  
+
   &:focus {
     outline: none;
     border-color: ${COLORS.purple};
@@ -60,7 +81,7 @@ const TextArea = styled.textarea<{ height?: number }>`
   font-size: 14px;
   resize: none;
   line-height: 1.5;
-  
+
   &:focus {
     outline: none;
     border-color: ${COLORS.purple};
@@ -113,27 +134,75 @@ const BacklogItem = styled.div`
   align-items: center;
 `;
 
-let socket: Socket;
+const ModalOverlay = styled.div`
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+`;
+
+const ModalBox = styled.div`
+  background: ${COLORS.surface};
+  border: 1px solid ${COLORS.border};
+  padding: 40px;
+  width: 380px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+`;
+
+const ErrorText = styled.span`
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: ${COLORS.magenta};
+  letter-spacing: 0.1em;
+`;
+
+const STORAGE_KEY = 'agile-free-backlog';
 
 const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
-  const [formData, setFormData] = useState({
-    asA: 'Product Manager',
-    iWant: 'a tool that generates user stories automatically',
-    soThat: 'I can save time during sprint planning',
-    priority: 'High',
-    points: '5'
+  const socketRef = useRef<Socket | null>(null);
+
+  const [formData, setFormData] = useState<FormData>({
+    asA: '',
+    iWant: '',
+    soThat: '',
+    priority: 'Medium',
+    points: '3'
   });
 
   const [criteria, setCriteria] = useState<string[]>([]);
   const [newCriterion, setNewCriterion] = useState('');
-  const [backlog, setBacklog] = useState<any[]>([]);
+  const [backlog, setBacklog] = useState<Story[]>(() => {
+    try {
+      return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
+    } catch {
+      return [];
+    }
+  });
   const [generated, setGenerated] = useState(false);
+  const [copyLabel, setCopyLabel] = useState('copy draft ⎘');
+
+  // Poker launch modal state
+  const [showPokerModal, setShowPokerModal] = useState(false);
+  const [pokerUsername, setPokerUsername] = useState('');
+  const [pokerError, setPokerError] = useState('');
+
+  // Persist backlog to localStorage on change
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(backlog));
+  }, [backlog]);
 
   useEffect(() => {
-    socket = io(window.location.origin);
+    const socket = io(window.location.origin);
+    socketRef.current = socket;
     return () => {
       socket.disconnect();
+      socketRef.current = null;
     };
   }, []);
 
@@ -142,54 +211,58 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const addCriterion = () => {
-    if (newCriterion) {
-      setCriteria([...criteria, newCriterion]);
-      setNewCriterion('');
-    }
+    const text = newCriterion.trim();
+    if (!text) return;
+    setCriteria([...criteria, text]);
+    setNewCriterion('');
   };
 
   const addToBacklog = () => {
-    const newStory = {
-      title: `${formData.asA}: ${formData.iWant.slice(0, 30)}...`,
+    const newStory: Story = {
+      title: `${formData.asA}: ${formData.iWant.slice(0, 30)}${formData.iWant.length > 30 ? '...' : ''}`,
       asA: formData.asA,
       iWant: formData.iWant,
       soThat: formData.soThat,
       criteria: [...criteria],
       id: Math.random().toString(36).substr(2, 9)
     };
-    setBacklog([...backlog, newStory]);
+    setBacklog(prev => [...prev, newStory]);
     setGenerated(false);
     setCriteria([]);
+    setFormData({ asA: '', iWant: '', soThat: '', priority: 'Medium', points: '3' });
   };
 
-  const pushToPoker = () => {
-    if (backlog.length === 0) {
-      alert("Backlog is empty!");
-      return;
-    }
-    
-    const username = prompt("Enter your username for the poker session:");
-    if (!username) return;
+  const handleLaunchPoker = () => {
+    if (backlog.length === 0) return;
+    setShowPokerModal(true);
+    setPokerUsername('');
+    setPokerError('');
+  };
 
+  const handleConfirmPoker = () => {
+    const trimUser = pokerUsername.trim();
+    if (!trimUser) { setPokerError('Username is required'); return; }
+    setPokerError('');
+    setShowPokerModal(false);
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
-    socket.emit('poker:updateBacklog', { roomId: newCode, backlog });
-    
-    // Redirect to PokerTool with parameters
-    navigate(`/poker?room=${newCode}&user=${username}`);
+    socketRef.current?.emit('poker:updateBacklog', { roomId: newCode, backlog });
+    navigate(`/poker?room=${newCode}&user=${encodeURIComponent(trimUser)}`);
   };
 
   const handleCopy = () => {
-    const text = `
-User Story:
-AS A: ${formData.asA}
-I WANT TO: ${formData.iWant}
-SO THAT: ${formData.soThat}
-
-Acceptance Criteria:
-${criteria.map(c => `- ${c}`).join('\n')}
-    `;
+    if (!formData.asA && !formData.iWant && !formData.soThat) return;
+    const text = [
+      'User Story:',
+      `AS A: ${formData.asA}`,
+      `I WANT TO: ${formData.iWant}`,
+      `SO THAT: ${formData.soThat}`,
+      '',
+      'Acceptance Criteria:',
+      ...criteria.map(c => `- ${c}`),
+    ].join('\n');
     navigator.clipboard.writeText(text);
-    alert('Story copied to clipboard!');
+    setCopyLabel('copied!');
+    setTimeout(() => setCopyLabel('copy draft ⎘'), 2000);
   };
 
   return (
@@ -197,28 +270,85 @@ ${criteria.map(c => `- ${c}`).join('\n')}
       <StoryContainer>
         <InputPanel>
           <Label color={COLORS.purple} size={14}>story inputs</Label>
+
           <FormGroup>
-            <Label>as a...</Label>
-            <Input value={formData.asA} onChange={e => setFormData({...formData, asA: e.target.value})} />
+            <Label as="label" htmlFor="story-as-a">as a...</Label>
+            <Input
+              id="story-as-a"
+              value={formData.asA}
+              onChange={e => setFormData({ ...formData, asA: e.target.value })}
+              placeholder="type of user"
+              aria-label="As a — type of user"
+            />
           </FormGroup>
+
           <FormGroup>
-            <Label>i want to...</Label>
-            <TextArea value={formData.iWant} onChange={e => setFormData({...formData, iWant: e.target.value})} />
+            <Label as="label" htmlFor="story-i-want">i want to...</Label>
+            <TextArea
+              id="story-i-want"
+              value={formData.iWant}
+              onChange={e => setFormData({ ...formData, iWant: e.target.value })}
+              placeholder="goal or action"
+              aria-label="I want to — goal or action"
+            />
           </FormGroup>
+
           <FormGroup>
-            <Label>so that...</Label>
-            <TextArea value={formData.soThat} onChange={e => setFormData({...formData, soThat: e.target.value})} />
+            <Label as="label" htmlFor="story-so-that">so that...</Label>
+            <TextArea
+              id="story-so-that"
+              value={formData.soThat}
+              onChange={e => setFormData({ ...formData, soThat: e.target.value })}
+              placeholder="benefit or outcome"
+              aria-label="So that — benefit or outcome"
+            />
           </FormGroup>
+
           <FormGroup>
             <Label>acceptance criteria</Label>
             <div style={{ display: 'flex', gap: 10 }}>
-              <Input style={{ flex: 1 }} value={newCriterion} onChange={e => setNewCriterion(e.target.value)} placeholder="New criterion..." />
-              <Btn onClick={addCriterion} style={{ padding: '0 24px' }}>+</Btn>
+              <Input
+                style={{ flex: 1 }}
+                value={newCriterion}
+                onChange={e => setNewCriterion(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && addCriterion()}
+                placeholder="New criterion..."
+                aria-label="New acceptance criterion"
+              />
+              <Btn onClick={addCriterion} style={{ padding: '0 24px' }} aria-label="Add criterion">+</Btn>
             </div>
+            {criteria.map((c, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: COLORS.purple, fontSize: 12 }} aria-hidden="true">•</span>
+                <span className="wf-mono" style={{ fontSize: 12, color: COLORS.secondary, flex: 1 }}>{c}</span>
+                <Btn
+                  onClick={() => setCriteria(criteria.filter((_, j) => j !== i))}
+                  style={{ fontSize: 10, padding: '2px 8px' }}
+                  aria-label={`Remove criterion: ${c}`}
+                >
+                  ✕
+                </Btn>
+              </div>
+            ))}
           </FormGroup>
+
           <div style={{ marginTop: 'auto', display: 'flex', gap: 12, flexDirection: 'column' }}>
-            <Btn primary onClick={handleGenerate} style={{ width: '100%', borderColor: COLORS.purple, color: COLORS.purple, background: 'rgba(184, 41, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center' }}>✦ generate</Btn>
-            <Btn onClick={pushToPoker} style={{ width: '100%', borderColor: COLORS.cyan, color: COLORS.cyan, background: 'rgba(0, 245, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center' }}>↑ start poker with backlog</Btn>
+            <Btn
+              primary
+              onClick={handleGenerate}
+              style={{ width: '100%', borderColor: COLORS.purple, color: COLORS.purple, background: 'rgba(184, 41, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center' }}
+              aria-label="Preview story"
+            >
+              ✦ preview story
+            </Btn>
+            <Btn
+              onClick={handleLaunchPoker}
+              disabled={backlog.length === 0}
+              style={{ width: '100%', borderColor: COLORS.cyan, color: backlog.length === 0 ? COLORS.muted : COLORS.cyan, background: 'rgba(0, 245, 255, 0.08)', padding: '16px', fontSize: 14, justifyContent: 'center', opacity: backlog.length === 0 ? 0.5 : 1 }}
+              aria-label={backlog.length === 0 ? 'Add stories to backlog before launching poker' : 'Start planning poker with current backlog'}
+            >
+              ↑ start poker with backlog
+            </Btn>
           </div>
         </InputPanel>
 
@@ -226,7 +356,9 @@ ${criteria.map(c => `- ${c}`).join('\n')}
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
             <Label color={COLORS.purple} size={14}>current backlog ({backlog.length})</Label>
             <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${COLORS.border}, transparent)` }} />
-            <Btn style={{ fontSize: 11, padding: '6px 16px' }} onClick={handleCopy}>copy draft ⎘</Btn>
+            <Btn style={{ fontSize: 11, padding: '6px 16px' }} onClick={handleCopy} aria-label="Copy current story draft to clipboard">
+              {copyLabel}
+            </Btn>
           </div>
 
           <StoryCard>
@@ -236,21 +368,51 @@ ${criteria.map(c => `- ${c}`).join('\n')}
             {generated ? (
               <>
                 <StoryBody>
-                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>AS A</span> <span className="wf-body">{formData.asA}</span></StoryLine>
-                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>I WANT</span> <span className="wf-body">{formData.iWant}</span></StoryLine>
-                  <StoryLine><span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>SO THAT</span> <span className="wf-body">{formData.soThat}</span></StoryLine>
+                  <StoryLine>
+                    <span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>AS A</span>
+                    <span className="wf-body">{formData.asA || '—'}</span>
+                  </StoryLine>
+                  <StoryLine>
+                    <span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>I WANT</span>
+                    <span className="wf-body">{formData.iWant || '—'}</span>
+                  </StoryLine>
+                  <StoryLine>
+                    <span className="wf-mono" style={{ color: COLORS.purple, fontSize: 14, minWidth: 80 }}>SO THAT</span>
+                    <span className="wf-body">{formData.soThat || '—'}</span>
+                  </StoryLine>
                 </StoryBody>
 
-                <Label style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>acceptance criteria</Label>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
-                  {criteria.map((c, i) => (
-                    <div key={i} style={{ display: 'flex', gap: 12, fontSize: 16 }}>
-                      <span style={{ color: COLORS.purple }}>•</span>
-                      <span className="wf-body">{c}</span>
+                {criteria.length > 0 && (
+                  <>
+                    <Label style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>acceptance criteria</Label>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginBottom: 24 }}>
+                      {criteria.map((c, i) => (
+                        <div key={i} style={{ display: 'flex', gap: 12, fontSize: 16 }}>
+                          <span style={{ color: COLORS.purple }} aria-hidden="true">•</span>
+                          <span className="wf-body">{c}</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
+                  </>
+                )}
+
+                <div style={{ display: 'flex', gap: 12, marginTop: 'auto' }}>
+                  <Btn
+                    primary
+                    onClick={addToBacklog}
+                    style={{ flex: 1, padding: '16px', justifyContent: 'center' }}
+                    aria-label="Add this story to the backlog"
+                  >
+                    Add to Backlog +
+                  </Btn>
+                  <Btn
+                    onClick={() => setGenerated(false)}
+                    style={{ padding: '16px 20px' }}
+                    aria-label="Go back to editing"
+                  >
+                    ← edit
+                  </Btn>
                 </div>
-                <Btn primary onClick={addToBacklog} style={{ marginTop: 'auto', padding: '16px', justifyContent: 'center' }}>Add to Backlog +</Btn>
               </>
             ) : (
               <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
@@ -260,16 +422,22 @@ ${criteria.map(c => `- ${c}`).join('\n')}
                     <Label style={{ color: COLORS.muted, fontSize: 16 }}>No stories in backlog yet</Label>
                   </div>
                 ) : (
-                  <BacklogList>
+                  <BacklogList role="list" aria-label="Story backlog">
                     {backlog.map((item, i) => (
-                      <BacklogItem key={item.id} style={{ flexDirection: 'column', alignItems: 'flex-start', gap: 8 }}>
+                      <BacklogItem key={item.id} role="listitem">
                         <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 8, marginBottom: 4 }}>
-                          <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{i+1}</span>
-                          <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }}>remove</Btn>
+                          <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{i + 1}</span>
+                          <Btn
+                            onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))}
+                            style={{ fontSize: 10, padding: '4px 8px' }}
+                            aria-label={`Remove story ${i + 1}: ${item.title}`}
+                          >
+                            remove
+                          </Btn>
                         </div>
-                        <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.4 }}>
-                          <span style={{ color: COLORS.muted }}>AS A</span> {item.asA} <br/>
-                          <span style={{ color: COLORS.muted }}>I WANT</span> {item.iWant} <br/>
+                        <div className="wf-body" style={{ fontSize: 13, lineHeight: 1.4, width: '100%' }}>
+                          <span style={{ color: COLORS.muted }}>AS A</span> {item.asA}<br />
+                          <span style={{ color: COLORS.muted }}>I WANT</span> {item.iWant}<br />
                           <span style={{ color: COLORS.muted }}>SO THAT</span> {item.soThat}
                         </div>
                       </BacklogItem>
@@ -281,6 +449,44 @@ ${criteria.map(c => `- ${c}`).join('\n')}
           </StoryCard>
         </OutputPanel>
       </StoryContainer>
+
+      {showPokerModal && (
+        <ModalOverlay role="dialog" aria-modal="true" aria-label="Start poker session">
+          <ModalBox>
+            <Label color={COLORS.cyan} size={14}>start poker session</Label>
+            <div className="wf-mono" style={{ fontSize: 12, color: COLORS.muted }}>
+              {backlog.length} {backlog.length === 1 ? 'story' : 'stories'} will be pushed to the new room.
+            </div>
+            <Input
+              placeholder="YOUR USERNAME"
+              value={pokerUsername}
+              onChange={e => setPokerUsername(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleConfirmPoker()}
+              style={{ fontSize: 16 }}
+              aria-label="Your username for the poker session"
+              autoFocus
+            />
+            {pokerError && <ErrorText role="alert">{pokerError}</ErrorText>}
+            <div style={{ display: 'flex', gap: 12 }}>
+              <Btn
+                primary
+                onClick={handleConfirmPoker}
+                style={{ flex: 1, justifyContent: 'center', padding: '14px' }}
+                aria-label="Launch poker session"
+              >
+                Launch Poker →
+              </Btn>
+              <Btn
+                onClick={() => setShowPokerModal(false)}
+                style={{ padding: '14px 20px' }}
+                aria-label="Cancel"
+              >
+                Cancel
+              </Btn>
+            </div>
+          </ModalBox>
+        </ModalOverlay>
+      )}
     </ToolShell>
   );
 };

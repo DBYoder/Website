@@ -157,10 +157,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       <Main>
         <TopBar>
           <span className="wf-mono" style={{ fontSize: 12, color: COLORS.muted }}>~ free pm tools for agile teams</span>
-          <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
-            <span className="wf-mono" style={{ fontSize: 12, color: COLORS.secondary, cursor: 'pointer' }}>github</span>
-            <Btn>contact</Btn>
-          </div>
         </TopBar>
 
         <HeroSection>
@@ -174,10 +170,6 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
               </div>
               <div style={{ marginTop: 24 }}>
                 <Lines count={2} color={COLORS.borderBright} />
-              </div>
-              <div style={{ marginTop: 32, display: 'flex', gap: 16 }}>
-                <Btn primary style={{ fontSize: 14, padding: '12px 32px' }}>▶ launch a tool</Btn>
-                <Btn style={{ fontSize: 14, padding: '12px 32px' }}>view source</Btn>
               </div>
             </div>
 

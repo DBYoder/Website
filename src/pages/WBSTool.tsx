@@ -56,6 +56,10 @@ const Container = styled.div`
   flex: 1;
   display: flex;
   overflow: hidden;
+  @media (max-width: 768px) {
+    flex-direction: column;
+    overflow: visible;
+  }
 `;
 
 const LeftPanel = styled.div`
@@ -65,12 +69,21 @@ const LeftPanel = styled.div`
   flex-direction: column;
   background: ${COLORS.surface};
   flex-shrink: 0;
+  @media (max-width: 768px) {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid ${COLORS.border};
+  }
 `;
 
 const TreeArea = styled.div`
   flex: 1;
   padding: 32px;
   overflow-y: auto;
+  @media (max-width: 768px) {
+    padding: 16px;
+    overflow: visible;
+  }
 `;
 
 const NodeRow = styled.div<{ indent: number; borderColor: string }>`
@@ -205,6 +218,13 @@ const JoinOverlay = styled.div`
   display: flex;
   align-items: center;
   justify-content: center;
+  @media (max-width: 768px) {
+    padding: 24px 16px;
+    align-items: stretch;
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding-top: 48px;
+  }
 `;
 
 const Input = styled.input`
@@ -616,7 +636,7 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
 
           {/* Controls */}
-          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 10, marginTop: 'auto' }}>
+          <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <Btn
               primary
               onClick={handleExport}

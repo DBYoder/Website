@@ -34,6 +34,14 @@ export const GlobalStyles = createGlobalStyle`
     font-size: 16px;
   }
 
+  @media (max-width: 768px) {
+    html, body, #root {
+      height: auto;
+      min-height: 100%;
+      overflow: auto;
+    }
+  }
+
   .wf-label {
     font-family: 'Share Tech Mono', monospace;
     font-size: 13px;

@@ -9,6 +9,11 @@ const Layout = styled.div`
   height: 100%;
   background: ${COLORS.bg};
   border: 1px solid ${COLORS.border};
+  @media (max-width: 768px) {
+    flex-direction: column;
+    height: auto;
+    border: none;
+  }
 `;
 
 const Sidebar = styled.div`
@@ -18,6 +23,7 @@ const Sidebar = styled.div`
   border-right: 1px solid ${COLORS.border};
   display: flex;
   flex-direction: column;
+  @media (max-width: 768px) { display: none; }
 `;
 
 const LogoArea = styled.div`
@@ -51,6 +57,7 @@ const Main = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  @media (max-width: 768px) { overflow: visible; }
 `;
 
 const TopBar = styled.div`
@@ -61,11 +68,13 @@ const TopBar = styled.div`
   justify-content: space-between;
   padding: 0 32px;
   background: ${COLORS.surface};
+  @media (max-width: 768px) { padding: 0 16px; }
 `;
 
 const HeroSection = styled.div`
   padding: 56px 56px 40px;
   border-bottom: 1px solid ${COLORS.border};
+  @media (max-width: 768px) { padding: 32px 20px 24px; }
 `;
 
 const ToolGrid = styled.div`
@@ -75,6 +84,11 @@ const ToolGrid = styled.div`
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: 24px;
   overflow-y: auto;
+  @media (max-width: 768px) {
+    padding: 20px;
+    grid-template-columns: 1fr;
+    overflow: visible;
+  }
 `;
 
 const ToolCard = styled.div<{ accent: string }>`
@@ -151,7 +165,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
 
         <HeroSection>
           <div style={{ display: 'flex', gap: 48, alignItems: 'flex-start', flexWrap: 'wrap' }}>
-            <div style={{ flex: 1, minWidth: 400 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
               <Label color={COLORS.cyan} style={{ marginBottom: 16, display: 'block', fontSize: 14 }}>// system initialized</Label>
               <div className="wf-title" style={{ fontSize: 48, color: COLORS.primary, lineHeight: 1.1, letterSpacing: '0.05em' }}>
                 FREE TOOLS<br />

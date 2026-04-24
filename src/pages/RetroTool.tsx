@@ -32,6 +32,7 @@ const RetroContainer = styled.div`
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  @media (max-width: 768px) { overflow: visible; }
 `;
 
 const Toolbar = styled.div`
@@ -39,10 +40,19 @@ const Toolbar = styled.div`
   border-bottom: 1px solid ${COLORS.border};
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
   padding: 0 32px;
   background: ${COLORS.surface};
   flex-shrink: 0;
+  @media (max-width: 768px) {
+    padding: 0 12px;
+    gap: 8px;
+    flex-wrap: wrap;
+    height: auto;
+    min-height: 52px;
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
 `;
 
 const ColumnsGrid = styled.div`
@@ -51,6 +61,11 @@ const ColumnsGrid = styled.div`
   grid-template-columns: 1fr 1fr 1fr;
   gap: 0;
   overflow: hidden;
+  @media (max-width: 768px) {
+    grid-template-columns: 1fr;
+    overflow: visible;
+    flex: none;
+  }
 `;
 
 const Column = styled.div<{ last?: boolean }>`
@@ -59,6 +74,27 @@ const Column = styled.div<{ last?: boolean }>`
   flex-direction: column;
   overflow: hidden;
   background: ${COLORS.bg};
+  @media (max-width: 768px) {
+    border-right: none;
+    border-bottom: 1px solid ${COLORS.border};
+    overflow: visible;
+    min-height: 300px;
+  }
+`;
+
+const Input = styled.input`
+  background: ${COLORS.elevated};
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.primary};
+  padding: 12px 16px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 18px;
+  width: 320px;
+  &:focus {
+    outline: none;
+    border-color: ${COLORS.magenta};
+  }
+  @media (max-width: 768px) { width: 100%; font-size: 16px; }
 `;
 
 const ColumnHeader = styled.div`
@@ -177,20 +213,12 @@ const JoinOverlay = styled.div`
   justify-content: center;
   flex-direction: column;
   gap: 32px;
-`;
-
-const Input = styled.input`
-  background: ${COLORS.elevated};
-  border: 1px solid ${COLORS.border};
-  color: ${COLORS.primary};
-  padding: 12px 16px;
-  font-family: 'Share Tech Mono', monospace;
-  font-size: 18px;
-  width: 320px;
-
-  &:focus {
-    outline: none;
-    border-color: ${COLORS.magenta};
+  @media (max-width: 768px) {
+    padding: 24px 16px;
+    align-items: stretch;
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding-top: 48px;
   }
 `;
 

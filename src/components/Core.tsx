@@ -8,6 +8,11 @@ export const Box = styled.div<{ w?: string | number; h?: string | number; bg?: s
   background: ${props => props.bg || COLORS.card};
   border: 1px dashed ${props => props.border || COLORS.border};
   position: relative;
+
+  @media (max-width: 768px) {
+    width: 100%;
+    max-width: ${props => typeof props.w === 'number' ? `${props.w}px` : props.w || 'none'};
+  }
 `;
 
 export const Label = styled.span<{ color?: string; size?: number }>`

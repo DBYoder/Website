@@ -13,6 +13,12 @@ const AppContainer = styled.div`
   height: 100vh;
   display: flex;
   overflow: hidden;
+
+  @media (max-width: 768px) {
+    height: auto;
+    min-height: 100svh;
+    overflow: visible;
+  }
 `;
 
 const NavigationWrapper: React.FC = () => {

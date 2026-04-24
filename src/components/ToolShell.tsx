@@ -4,26 +4,70 @@ import { Link } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import { Tag, Btn, Label } from './Core';
 
+const M = '@media (max-width: 768px)';
+
 const ShellLayout = styled.div`
   width: 100%;
   height: 100%;
   display: flex;
   background: ${COLORS.bg};
   border: 1px solid ${COLORS.border};
+  ${M} { border: none; }
 `;
 
-const Sidebar = styled.div`
+const Sidebar = styled.div<{ open?: boolean }>`
   width: 240px;
   height: 100%;
   background: ${COLORS.surface};
   border-right: 1px solid ${COLORS.border};
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
+  ${M} {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    height: 100dvh;
+    z-index: 300;
+    width: 260px;
+    transform: ${props => props.open ? 'translateX(0)' : 'translateX(-100%)'};
+    transition: transform 0.25s ease;
+  }
+`;
+
+const MobileOverlay = styled.div<{ visible?: boolean }>`
+  display: none;
+  ${M} {
+    display: ${props => props.visible ? 'block' : 'none'};
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 299;
+  }
 `;
 
 const SidebarHeader = styled.div`
-  padding: 32px 24px;
+  padding: 32px 24px 24px;
   border-bottom: 1px solid ${COLORS.border};
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+`;
+
+const SidebarCloseBtn = styled.button`
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  color: ${COLORS.muted};
+  cursor: pointer;
+  font-size: 18px;
+  padding: 0 4px;
+  line-height: 1;
+  display: none;
+  ${M} { display: block; }
+  &:hover { color: ${COLORS.primary}; }
 `;
 
 const NavList = styled.div`
@@ -39,10 +83,7 @@ const NavLink = styled(Link)<{ active?: boolean; toolColor: string }>`
   border-left: 3px solid ${props => props.active ? props.toolColor : 'transparent'};
   cursor: pointer;
   transition: all 0.2s;
-  
-  &:hover {
-    background: rgba(255, 255, 255, 0.05);
-  }
+  &:hover { background: rgba(255, 255, 255, 0.05); }
 `;
 
 const SidebarFooter = styled.div`
@@ -54,6 +95,7 @@ const Main = styled.div`
   flex: 1;
   display: flex;
   flex-direction: column;
+  min-width: 0;
 `;
 
 const TopBar = styled.div`
@@ -64,6 +106,32 @@ const TopBar = styled.div`
   justify-content: space-between;
   padding: 0 32px;
   background: ${COLORS.surface};
+  flex-shrink: 0;
+  ${M} { padding: 0 12px; gap: 8px; }
+`;
+
+const HamburgerBtn = styled.button`
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: 1px solid ${COLORS.borderBright};
+  color: ${COLORS.secondary};
+  width: 36px;
+  height: 36px;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 18px;
+  flex-shrink: 0;
+  ${M} { display: flex; }
+  &:hover { color: ${COLORS.primary}; border-color: ${COLORS.secondary}; }
+`;
+
+const NavPath = styled.span`
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 13px;
+  ${M} { display: none; }
 `;
 
 interface ToolShellProps {
@@ -76,6 +144,7 @@ interface ToolShellProps {
 
 const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, children }) => {
   const [copied, setCopied] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const handleShareLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -83,12 +152,19 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const closeMenu = () => setMenuOpen(false);
+
   return (
     <ShellLayout>
-      <Sidebar>
+      <MobileOverlay visible={menuOpen} onClick={closeMenu} />
+
+      <Sidebar open={menuOpen}>
         <SidebarHeader>
-          <div className="wf-title" style={{ fontSize: 22, color: COLORS.cyan, textShadow: `0 0 10px ${COLORS.cyan}`, letterSpacing: '0.1em' }}>AGILE//FREE</div>
-          <div className="wf-label" style={{ fontSize: 11, color: COLORS.muted, marginTop: 6 }}>pm tools for teams</div>
+          <div>
+            <div className="wf-title" style={{ fontSize: 22, color: COLORS.cyan, textShadow: `0 0 10px ${COLORS.cyan}`, letterSpacing: '0.1em' }}>AGILE//FREE</div>
+            <div className="wf-label" style={{ fontSize: 11, color: COLORS.muted, marginTop: 6 }}>pm tools for teams</div>
+          </div>
+          <SidebarCloseBtn onClick={closeMenu} aria-label="Close menu">✕</SidebarCloseBtn>
         </SidebarHeader>
 
         <NavList>
@@ -102,12 +178,7 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
           ].map(({ label, id, path }) => {
             const active = activeNav === id;
             return (
-              <NavLink 
-                key={label} 
-                to={path}
-                active={active} 
-                toolColor={toolColor}
-              >
+              <NavLink key={label} to={path} active={active} toolColor={toolColor} onClick={closeMenu}>
                 <span className="wf-mono" style={{ fontSize: 13, color: active ? toolColor : COLORS.secondary }}>{label}</span>
               </NavLink>
             );
@@ -127,13 +198,14 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
 
       <Main>
         <TopBar>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-            <span className="wf-mono" style={{ fontSize: 13, color: toolColor }}>~/{activeNav}</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <HamburgerBtn onClick={() => setMenuOpen(true)} aria-label="Open navigation menu">☰</HamburgerBtn>
+            <NavPath style={{ color: toolColor }}>~/{activeNav}</NavPath>
             <Tag color={toolColor}>LIVE</Tag>
           </div>
-          <div style={{ display: 'flex', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 8 }}>
             <Btn style={{ fontSize: 12 }} onClick={handleShareLink} aria-label="Copy share link to clipboard">
-              {copied ? 'copied!' : 'share link'}
+              {copied ? 'copied!' : 'share'}
             </Btn>
             <Btn onClick={onBack} style={{ fontSize: 12 }}>← back</Btn>
           </div>

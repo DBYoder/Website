@@ -49,6 +49,10 @@ const StoryContainer = styled.div`
   flex: 1;
   display: flex;
   overflow: hidden;
+  @media (max-width: 768px) {
+    flex-direction: column;
+    overflow: visible;
+  }
 `;
 
 const InputPanel = styled.div`
@@ -60,6 +64,13 @@ const InputPanel = styled.div`
   gap: 24px;
   background: ${COLORS.surface};
   overflow-y: auto;
+  @media (max-width: 768px) {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid ${COLORS.border};
+    overflow: visible;
+    padding: 20px 16px;
+  }
 `;
 
 const OutputPanel = styled.div`
@@ -67,6 +78,10 @@ const OutputPanel = styled.div`
   padding: 32px 48px;
   display: flex;
   flex-direction: column;
+  @media (max-width: 768px) {
+    padding: 20px 16px;
+    overflow: visible;
+  }
 `;
 
 const FormGroup = styled.div`
@@ -117,6 +132,12 @@ const StoryCard = styled.div`
   flex-direction: column;
   overflow-y: auto;
   box-shadow: 0 12px 48px rgba(0, 0, 0, 0.4);
+  @media (max-width: 768px) {
+    padding: 20px;
+    flex: none;
+    overflow: visible;
+    min-height: 400px;
+  }
 `;
 
 const StoryBody = styled.div`

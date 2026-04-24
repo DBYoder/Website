@@ -99,6 +99,10 @@ const PokerContainer = styled.div`
   flex: 1;
   display: flex;
   overflow: hidden;
+  @media (max-width: 768px) {
+    flex-direction: column;
+    overflow: visible;
+  }
 `;
 
 const LeftPanel = styled.div`
@@ -107,6 +111,11 @@ const LeftPanel = styled.div`
   display: flex;
   flex-direction: column;
   background: ${COLORS.surface};
+  @media (max-width: 768px) {
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid ${COLORS.border};
+  }
 `;
 
 const ContentPanel = styled.div`
@@ -115,13 +124,17 @@ const ContentPanel = styled.div`
   flex-direction: column;
   padding: 40px 48px;
   overflow-y: auto;
+  @media (max-width: 768px) {
+    padding: 20px 16px;
+    overflow: visible;
+  }
 `;
 
 const CardDeck = styled.div`
   display: flex;
-  gap: 20px;
+  gap: 12px;
   flex-wrap: wrap;
-  margin-bottom: 40px;
+  margin-bottom: 32px;
 `;
 
 const Card = styled.button<{ active?: boolean; color: string }>`
@@ -129,6 +142,7 @@ const Card = styled.button<{ active?: boolean; color: string }>`
   -webkit-appearance: none;
   width: 80px;
   height: 110px;
+  @media (max-width: 768px) { width: 60px; height: 84px; }
   background: ${props => props.active ? `rgba(${parseInt(props.color.slice(1,3), 16)}, ${parseInt(props.color.slice(3,5), 16)}, ${parseInt(props.color.slice(5,7), 16)}, 0.12)` : COLORS.card};
   border: 1px solid ${props => props.active ? props.color : COLORS.border};
   display: flex;
@@ -219,6 +233,13 @@ const JoinOverlay = styled.div`
   justify-content: center;
   flex-direction: column;
   gap: 32px;
+  @media (max-width: 768px) {
+    padding: 24px 16px;
+    align-items: stretch;
+    overflow-y: auto;
+    justify-content: flex-start;
+    padding-top: 48px;
+  }
 `;
 
 const Input = styled.input`

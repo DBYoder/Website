@@ -270,6 +270,7 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [inputCol, setInputCol] = useState<ColKey | null>(null);
   const [inputText, setInputText] = useState('');
   const [inputError, setInputError] = useState('');
+  const [deletingCardId, setDeletingCardId] = useState<string | null>(null);
 
   // Timer input state
   const [showTimerInput, setShowTimerInput] = useState(false);
@@ -278,6 +279,22 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   // Sync roomCode to ref so effects don't need it as a dependency
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
+
+  // Update URL with room code after joining so share link works
+  useEffect(() => {
+    if (isJoined && roomCode) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', roomCode);
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [isJoined, roomCode]);
+
+  // Pre-fill room code from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlRoom = params.get('room');
+    if (urlRoom) setRoomCode(urlRoom.toUpperCase());
+  }, []);
 
   useEffect(() => {
     const socket = io(window.location.origin);
@@ -350,6 +367,11 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleVote = (colKey: ColKey, cardId: string) => {
     socketRef.current?.emit('retro:vote', { roomId: roomCodeRef.current, colKey, cardId });
+  };
+
+  const handleDeleteCard = (cardId: string) => {
+    socketRef.current?.emit('retro:deleteCard', { roomId: roomCodeRef.current, cardId, username });
+    setDeletingCardId(null);
   };
 
   const handleStartTimer = () => {
@@ -547,16 +569,35 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                       </div>
                       <VoteContainer>
                         <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>by {note.owner}</span>
-                        <VoteBtn
-                          color={config.color}
-                          onClick={() => handleVote(key, note.id)}
-                          aria-label={`Upvote this card (${note.votes} vote${note.votes !== 1 ? 's' : ''})`}
-                        >
-                          <span style={{ fontSize: 14, color: config.color }} aria-hidden="true">▲</span>
-                          <span className="wf-mono" style={{ fontSize: 13, color: note.votes > 0 ? config.color : COLORS.muted }}>
-                            {note.votes}
-                          </span>
-                        </VoteBtn>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                          {note.owner === username && (
+                            deletingCardId === note.id ? (
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta }}>delete?</span>
+                                <VoteBtn color={COLORS.magenta} onClick={() => handleDeleteCard(note.id)} aria-label="Confirm delete">
+                                  <span className="wf-mono" style={{ fontSize: 11, color: COLORS.magenta }}>yes</span>
+                                </VoteBtn>
+                                <VoteBtn color={COLORS.secondary} onClick={() => setDeletingCardId(null)} aria-label="Cancel delete">
+                                  <span className="wf-mono" style={{ fontSize: 11, color: COLORS.secondary }}>no</span>
+                                </VoteBtn>
+                              </div>
+                            ) : (
+                              <VoteBtn color={COLORS.magenta} onClick={() => setDeletingCardId(note.id)} aria-label="Delete this card">
+                                <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>✕</span>
+                              </VoteBtn>
+                            )
+                          )}
+                          <VoteBtn
+                            color={config.color}
+                            onClick={() => handleVote(key, note.id)}
+                            aria-label={`Upvote this card (${note.votes} vote${note.votes !== 1 ? 's' : ''})`}
+                          >
+                            <span style={{ fontSize: 14, color: config.color }} aria-hidden="true">▲</span>
+                            <span className="wf-mono" style={{ fontSize: 13, color: note.votes > 0 ? config.color : COLORS.muted }}>
+                              {note.votes}
+                            </span>
+                          </VoteBtn>
+                        </div>
                       </VoteContainer>
                     </RetroCard>
                   ))}

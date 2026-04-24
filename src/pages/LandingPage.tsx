@@ -132,9 +132,8 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
             { label: '// retro', active: false, id: 'retro' },
             { label: '// stories', active: false, id: 'stories' },
             { label: '// wbs', active: false, id: 'wbs' },
-            { label: '// about', active: false, id: 'about' },
           ].map(({ label, active, id }) => (
-            <NavItemStyled key={label} active={active} onClick={() => id !== 'home' && id !== 'about' && onLaunch(id)}>
+            <NavItemStyled key={label} active={active} onClick={() => id !== 'home' && onLaunch(id)}>
               <span className="wf-mono" style={{ fontSize: 13, color: active ? COLORS.cyan : COLORS.secondary }}>{label}</span>
             </NavItemStyled>
           ))}
@@ -179,6 +178,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
                 { cmd: 'poker', desc: 'planning poker' },
                 { cmd: 'retro', desc: 'retro board' },
                 { cmd: 'stories', desc: 'story generator' },
+                { cmd: 'wbs', desc: 'work breakdown' },
               ].map(({ cmd, desc }) => (
                 <div key={cmd} style={{ marginBottom: 10 }}>
                   <span className="wf-mono" style={{ fontSize: 13, color: COLORS.cyan }}>{'>'} </span>

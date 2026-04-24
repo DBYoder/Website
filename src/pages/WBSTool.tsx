@@ -15,6 +15,8 @@ interface WBSNodeData {
   parentId: string | null;
   childIds: string[];
   collapsed: boolean;
+  asA?: string;
+  soThat?: string;
 }
 
 interface WBSSession {
@@ -96,9 +98,21 @@ const NodeRow = styled.div<{ indent: number; borderColor: string }>`
   border-right: 1px solid ${COLORS.border};
   border-bottom: 1px solid ${COLORS.border};
   background: ${COLORS.card};
-  margin-bottom: 4px;
+  margin-bottom: 0;
   transition: background 0.15s;
   &:hover { background: ${COLORS.elevated}; }
+`;
+
+const DetailRow = styled.div<{ indent: number }>`
+  padding: 12px 14px 12px ${p => p.indent + 14}px;
+  background: ${COLORS.elevated};
+  border-left: 3px solid ${COLORS.lime};
+  border-right: 1px solid ${COLORS.border};
+  border-bottom: 1px solid ${COLORS.border};
+  margin-bottom: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 `;
 
 const NodeBadge = styled.span<{ color: string }>`
@@ -130,6 +144,17 @@ const NodeEditInput = styled.input`
   font-family: 'Rajdhani', sans-serif;
   font-size: 16px;
   &:focus { outline: none; }
+`;
+
+const DetailInput = styled.input`
+  flex: 1;
+  background: ${COLORS.card};
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.primary};
+  padding: 5px 10px;
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 14px;
+  &:focus { outline: none; border-color: ${COLORS.lime}; }
 `;
 
 const CollapseBtn = styled.button`
@@ -254,14 +279,21 @@ interface TreeActions {
   editingNodeId: string | null;
   editingTitle: string;
   deletingNodeId: string | null;
+  detailNodeId: string | null;
+  detailAsA: string;
+  detailSoThat: string;
   setAddingChildOf: (id: string | null) => void;
   setAddingTitle: (t: string) => void;
   setEditingNodeId: (id: string | null) => void;
   setEditingTitle: (t: string) => void;
   setDeletingNodeId: (id: string | null) => void;
+  setDetailNodeId: (id: string | null) => void;
+  setDetailAsA: (v: string) => void;
+  setDetailSoThat: (v: string) => void;
   submitAdd: () => void;
   submitEdit: () => void;
   confirmDelete: () => void;
+  submitDetails: () => void;
   onToggle: (nodeId: string) => void;
 }
 
@@ -281,14 +313,15 @@ const TreeNode: React.FC<{
   const isEditing = a.editingNodeId === nodeId;
   const isDeleting = a.deletingNodeId === nodeId;
   const isAddingHere = a.addingChildOf === nodeId;
+  const isShowingDetails = a.detailNodeId === nodeId;
   const canCollapse = childType !== null && node.childIds.length > 0;
   const active = a.sessionStatus === 'active';
   const indent = depth * 32;
+  const hasDetails = !!(node.asA || node.soThat);
 
   return (
     <div>
       <NodeRow indent={indent} borderColor={color}>
-        {/* Collapse toggle or spacer */}
         {childType !== null ? (
           <CollapseBtn
             onClick={() => canCollapse && a.onToggle(nodeId)}
@@ -330,6 +363,10 @@ const TreeNode: React.FC<{
           </NodeTitle>
         )}
 
+        {hasDetails && !isEditing && (
+          <span className="wf-mono" style={{ fontSize: 9, color: COLORS.lime, border: `1px solid ${COLORS.lime}`, padding: '1px 4px' }}>✓</span>
+        )}
+
         <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted, flexShrink: 0 }}>
           {node.createdBy}
         </span>
@@ -344,6 +381,23 @@ const TreeNode: React.FC<{
               </>
             ) : (
               <>
+                {node.type === 'story' && isOwner && (
+                  <SmallBtn
+                    accent={COLORS.lime}
+                    onClick={() => {
+                      if (isShowingDetails) {
+                        a.setDetailNodeId(null);
+                      } else {
+                        a.setDetailNodeId(nodeId);
+                        a.setDetailAsA(node.asA ?? '');
+                        a.setDetailSoThat(node.soThat ?? '');
+                      }
+                    }}
+                    aria-label={isShowingDetails ? 'Close details' : 'Edit story details'}
+                  >
+                    {isShowingDetails ? 'close' : 'details'}
+                  </SmallBtn>
+                )}
                 {isOwner && childType && !isAddingHere && (
                   <SmallBtn
                     accent={NODE_COLOR[childType]}
@@ -363,6 +417,35 @@ const TreeNode: React.FC<{
           </ActionGroup>
         )}
       </NodeRow>
+
+      {/* Story detail form */}
+      {isShowingDetails && node.type === 'story' && (
+        <DetailRow indent={indent}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted, width: 60, flexShrink: 0 }}>AS A</span>
+            <DetailInput
+              value={a.detailAsA}
+              onChange={e => a.setDetailAsA(e.target.value)}
+              placeholder="type of user..."
+              aria-label="As a — type of user"
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted, width: 60, flexShrink: 0 }}>SO THAT</span>
+            <DetailInput
+              value={a.detailSoThat}
+              onChange={e => a.setDetailSoThat(e.target.value)}
+              placeholder="benefit or outcome..."
+              aria-label="So that — benefit or outcome"
+              onKeyDown={e => e.key === 'Enter' && a.submitDetails()}
+            />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <SmallBtn accent={COLORS.lime} onClick={a.submitDetails}>save</SmallBtn>
+            <SmallBtn onClick={() => a.setDetailNodeId(null)}>cancel</SmallBtn>
+          </div>
+        </DetailRow>
+      )}
 
       {/* Children */}
       {!node.collapsed && (
@@ -413,10 +496,20 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
   const [editingTitle, setEditingTitle] = useState('');
   const [deletingNodeId, setDeletingNodeId] = useState<string | null>(null);
+  const [detailNodeId, setDetailNodeId] = useState<string | null>(null);
+  const [detailAsA, setDetailAsA] = useState('');
+  const [detailSoThat, setDetailSoThat] = useState('');
   const [confirmDone, setConfirmDone] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
+
+  // Pre-fill room code from URL
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlRoom = params.get('room');
+    if (urlRoom) setRoomCode(urlRoom.toUpperCase());
+  }, []);
 
   useEffect(() => {
     const socket = io(window.location.origin);
@@ -427,6 +520,15 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     socket.on('wbs:state', (s: WBSSession) => setSession(s));
     return () => { socket.disconnect(); socketRef.current = null; };
   }, []);
+
+  // Update URL with room code after joining so share link works
+  useEffect(() => {
+    if (isJoined && roomCode) {
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', roomCode);
+      window.history.replaceState(null, '', url.toString());
+    }
+  }, [isJoined, roomCode]);
 
   const handleJoin = () => {
     const trimRoom = roomCode.trim().toUpperCase();
@@ -478,6 +580,19 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setDeletingNodeId(null);
   };
 
+  const submitDetails = () => {
+    if (detailNodeId) {
+      socketRef.current?.emit('wbs:updateStoryDetails', {
+        roomId: roomCodeRef.current,
+        nodeId: detailNodeId,
+        asA: detailAsA,
+        soThat: detailSoThat,
+        username,
+      });
+    }
+    setDetailNodeId(null);
+  };
+
   const onToggle = (nodeId: string) => {
     socketRef.current?.emit('wbs:toggleCollapse', { roomId: roomCodeRef.current, nodeId });
   };
@@ -504,9 +619,9 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           stories.push({
             id: story.id,
             title: story.title,
-            asA: '',
+            asA: story.asA ?? '',
             iWant: story.title,
-            soThat: '',
+            soThat: story.soThat ?? '',
             criteria: [],
             epic: epic.title,
             feature: feature.title,
@@ -529,8 +644,10 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const treeActions: TreeActions = {
     username, sessionStatus: session?.status ?? 'active',
     addingChildOf, addingTitle, editingNodeId, editingTitle, deletingNodeId,
+    detailNodeId, detailAsA, detailSoThat,
     setAddingChildOf, setAddingTitle, setEditingNodeId, setEditingTitle, setDeletingNodeId,
-    submitAdd, submitEdit, confirmDelete, onToggle,
+    setDetailNodeId, setDetailAsA, setDetailSoThat,
+    submitAdd, submitEdit, confirmDelete, submitDetails, onToggle,
   };
 
   if (!isJoined) {
@@ -594,7 +711,6 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     <ToolShell toolName="WBS" toolColor={COLORS.lime} activeNav="wbs" onBack={onBack}>
       <Container>
         <LeftPanel>
-          {/* Session info */}
           <div style={{ padding: '24px', borderBottom: `1px solid ${COLORS.border}` }}>
             <Label color={COLORS.lime} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
               session: {roomCode}
@@ -611,7 +727,6 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </div>
           </div>
 
-          {/* Participants */}
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
             <Label style={{ display: 'block', marginBottom: 12 }}>participants</Label>
             {participants.length === 0 ? (
@@ -624,7 +739,6 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             ))}
           </div>
 
-          {/* Structure counts */}
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
             <Label style={{ display: 'block', marginBottom: 12 }}>structure</Label>
             {([['epic', epicCount], ['feature', featureCount], ['story', storyCount]] as const).map(([type, count]) => (
@@ -635,7 +749,6 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             ))}
           </div>
 
-          {/* Controls */}
           <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 10 }}>
             <Btn
               primary
@@ -670,7 +783,6 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           </div>
         </LeftPanel>
 
-        {/* Tree */}
         <TreeArea>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 28 }}>
             <Label color={COLORS.lime} size={14}>work breakdown</Label>
@@ -690,7 +802,6 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <TreeNode key={nodeId} nodeId={nodeId} nodes={session.nodes} depth={0} a={treeActions} />
           ))}
 
-          {/* Add top-level epic */}
           {!isComplete && addingChildOf === 'root' && (
             <AddRow indent={0}>
               <NodeBadge color={NODE_COLOR.epic}>epic</NodeBadge>

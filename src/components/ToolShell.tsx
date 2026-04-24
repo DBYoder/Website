@@ -174,7 +174,6 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
             { label: '// retro', id: 'retro', path: '/retro' },
             { label: '// stories', id: 'stories', path: '/stories' },
             { label: '// wbs', id: 'wbs', path: '/wbs' },
-            { label: '// about', id: 'about', path: '#' },
           ].map(({ label, id, path }) => {
             const active = activeNav === id;
             return (

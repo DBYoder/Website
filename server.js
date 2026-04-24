@@ -161,6 +161,17 @@ io.on('connection', (socket) => {
     }
   });
 
+  socket.on('retro:deleteCard', ({ roomId, cardId, username }) => {
+    const s = sessions.retro[roomId];
+    if (!s) return;
+    for (const col of Object.values(s.columns)) {
+      const idx = col.findIndex(c => c.id === cardId && c.owner === username);
+      if (idx !== -1) { col.splice(idx, 1); break; }
+    }
+    io.to(`retro:${roomId}`).emit('retro:state', s);
+    saveData('retro.json', sessions.retro);
+  });
+
   socket.on('retro:stopTimer', ({ roomId }) => {
     const s = sessions.retro[roomId];
     if (s) {
@@ -228,6 +239,18 @@ io.on('connection', (socket) => {
 
     io.to(`wbs:${roomId}`).emit('wbs:state', s);
     saveData('wbs.json', sessions.wbs);
+  });
+
+  socket.on('wbs:updateStoryDetails', ({ roomId, nodeId, asA, soThat, username }) => {
+    const s = sessions.wbs[roomId];
+    if (!s || s.status === 'complete') return;
+    const node = s.nodes[nodeId];
+    if (node && node.type === 'story' && node.createdBy === username) {
+      node.asA = asA;
+      node.soThat = soThat;
+      io.to(`wbs:${roomId}`).emit('wbs:state', s);
+      saveData('wbs.json', sessions.wbs);
+    }
   });
 
   socket.on('wbs:toggleCollapse', ({ roomId, nodeId }) => {

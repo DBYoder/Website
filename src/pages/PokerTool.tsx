@@ -299,6 +299,9 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setUsername(urlUser);
       socket.emit('poker:join', { roomId: room, username: urlUser });
       setIsJoined(true);
+      const url = new URL(window.location.href);
+      url.searchParams.set('room', room);
+      window.history.replaceState(null, '', url.toString());
     }
 
     return () => {
@@ -306,6 +309,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       socketRef.current = null;
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const updateRoomUrl = (room: string) => {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', room);
+    window.history.replaceState(null, '', url.toString());
+  };
 
   const handleJoin = () => {
     const trimRoom = roomCode.trim().toUpperCase();
@@ -316,6 +325,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setRoomCode(trimRoom);
     socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser });
     setIsJoined(true);
+    updateRoomUrl(trimRoom);
   };
 
   const handleStartNew = () => {
@@ -326,6 +336,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setRoomCode(newCode);
     socketRef.current?.emit('poker:join', { roomId: newCode, username: trimUser });
     setIsJoined(true);
+    updateRoomUrl(newCode);
   };
 
   const handleVote = (val: string) => {
@@ -519,10 +530,15 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     aria-label={`Select story: ${story.title}${story.points ? ` (${story.points} pts)` : ''}`}
                     aria-pressed={session.currentStory?.id === story.id}
                   >
-                    <div className="wf-mono" style={{ fontSize: 11, color: session.currentStory?.id === story.id ? COLORS.cyan : COLORS.secondary }}>
+                    <div className="wf-mono" style={{ fontSize: 11, color: session.currentStory?.id === story.id ? COLORS.cyan : COLORS.secondary, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                       {story.title}
                     </div>
                     {story.points && <Tag color={COLORS.lime}>{story.points}</Tag>}
+                    <button
+                      onClick={e => { e.stopPropagation(); socketRef.current?.emit('poker:updateBacklog', { roomId: roomCode, backlog: session.backlog.filter(s => s.id !== story.id) }); }}
+                      aria-label={`Remove story: ${story.title}`}
+                      style={{ appearance: 'none', background: 'none', border: 'none', color: COLORS.muted, cursor: 'pointer', fontSize: 12, padding: '0 2px', flexShrink: 0 }}
+                    >✕</button>
                   </BacklogItem>
                 ))
               )}

@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
+import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
 
 // --- Types ---
 interface WBSNodeData {
@@ -25,17 +26,6 @@ interface WBSSession {
   participants: Record<string, { username: string }>;
   status: 'active' | 'complete';
   createdAt: number;
-}
-
-interface ExportedStory {
-  id: string;
-  title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  criteria: string[];
-  epic?: string;
-  feature?: string;
 }
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
@@ -606,38 +596,37 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleExport = () => {
     if (!session) return;
-    const stories: ExportedStory[] = [];
-    for (const epicId of session.rootIds) {
-      const epic = session.nodes[epicId];
-      if (!epic) continue;
-      for (const featureId of epic.childIds) {
-        const feature = session.nodes[featureId];
-        if (!feature) continue;
-        for (const storyId of feature.childIds) {
-          const story = session.nodes[storyId];
-          if (!story) continue;
-          stories.push({
-            id: story.id,
-            title: story.title,
-            asA: story.asA ?? '',
-            iWant: story.title,
-            soThat: story.soThat ?? '',
-            criteria: [],
-            epic: epic.title,
-            feature: feature.title,
-          });
-        }
+    const stories: Story[] = [];
+    // Recursive walk: collects every story node regardless of depth, tagging
+    // it with the nearest epic/feature ancestors on the path.
+    const visit = (nodeId: string, epicTitle?: string, featureTitle?: string) => {
+      const node = session.nodes[nodeId];
+      if (!node) return;
+      if (node.type === 'story') {
+        stories.push({
+          id: node.id,
+          title: node.title,
+          asA: node.asA ?? '',
+          iWant: node.title,
+          soThat: node.soThat ?? '',
+          criteria: [],
+          ...(epicTitle ? { epic: epicTitle } : {}),
+          ...(featureTitle ? { feature: featureTitle } : {}),
+        });
+        return;
       }
-    }
+      const nextEpic = node.type === 'epic' ? node.title : epicTitle;
+      const nextFeature = node.type === 'feature' ? node.title : featureTitle;
+      node.childIds.forEach(childId => visit(childId, nextEpic, nextFeature));
+    };
+    session.rootIds.forEach(id => visit(id));
+
     if (stories.length === 0) {
       setExportMsg('No stories in the tree yet.');
       setTimeout(() => setExportMsg(''), 3000);
       return;
     }
-    const existing: ExportedStory[] = JSON.parse(localStorage.getItem('agile-free-backlog') ?? '[]');
-    const existingIds = new Set(existing.map(s => s.id));
-    const merged = [...existing, ...stories.filter(s => !existingIds.has(s.id))];
-    localStorage.setItem('agile-free-backlog', JSON.stringify(merged));
+    saveBacklog(mergeStoriesById(loadBacklog(), stories));
     navigate('/stories');
   };
 

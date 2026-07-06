@@ -5,24 +5,14 @@ import { useLocation } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
+import { Story } from '../lib/story';
+import { storiesToCSV, parseStoriesFromCSV, downloadFile, isoDate } from '../lib/storyCsv';
 
 // --- Types ---
 interface PokerParticipant {
   username: string;
   vote: string | null;
   voted: boolean;
-}
-
-interface Story {
-  id: string;
-  title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  criteria: string[];
-  points?: string;
-  epic?: string;
-  feature?: string;
 }
 
 interface PokerSession {
@@ -33,66 +23,6 @@ interface PokerSession {
 }
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
-
-// --- CSV helpers ---
-const CSV_HEADERS = ['title', 'asA', 'iWant', 'soThat', 'points', 'criteria'];
-
-function escapeCSV(val: string): string {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`;
-  }
-  return val;
-}
-
-function parseCSVRow(line: string): string[] {
-  const fields: string[] = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-      else { inQuotes = !inQuotes; }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(cur); cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  fields.push(cur);
-  return fields;
-}
-
-function parseStoriesFromCSV(text: string): Story[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const header = parseCSVRow(lines[0]).map(h => h.toLowerCase().trim().replace(/\s+/g, ''));
-  const idx = (key: string) => header.indexOf(key);
-  return lines.slice(1).filter(l => l.trim()).map(line => {
-    const row = parseCSVRow(line);
-    const get = (key: string, fallback = '') => { const i = idx(key); return i >= 0 ? (row[i] ?? fallback) : fallback; };
-    const criteriaStr = get('criteria');
-    return {
-      id: Math.random().toString(36).substr(2, 9),
-      title: get('title'),
-      asA: get('asa'),
-      iWant: get('iwant'),
-      soThat: get('sothat'),
-      points: get('points') || undefined,
-      criteria: criteriaStr ? criteriaStr.split('|').filter(Boolean) : [],
-    };
-  }).filter(s => s.title || s.asA);
-}
-
-function storiesToCSV(stories: Story[]): string {
-  const rows = [
-    CSV_HEADERS.join(','),
-    ...stories.map(s => [
-      s.title, s.asA, s.iWant, s.soThat, s.points ?? '', (s.criteria ?? []).join('|'),
-    ].map(escapeCSV).join(',')),
-  ];
-  return rows.join('\n');
-}
 
 // --- Styles ---
 const PokerContainer = styled.div`
@@ -308,7 +238,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateRoomUrl = (room: string) => {
     const url = new URL(window.location.href);
@@ -350,10 +280,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleComplete = (points: string) => {
     if (!session?.currentStory) return;
+    const numeric = parseFloat(points);
+    if (isNaN(numeric)) return;
     socketRef.current?.emit('poker:completeStory', {
       roomId: roomCode,
       storyId: session.currentStory.id,
-      points
+      points: numeric
     });
     setSelectedCard(null);
     setCustomPoints('');
@@ -365,14 +297,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleExport = () => {
     if (!session) return;
-    const csv = storiesToCSV(session.backlog);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `poker-${roomCode}-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+    downloadFile(`poker-${roomCode}-${isoDate()}.csv`, storiesToCSV(session.backlog), 'text/csv');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {

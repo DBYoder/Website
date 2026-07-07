@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
+import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
 
 // --- Types ---
 interface WBSNodeData {
@@ -16,7 +17,9 @@ interface WBSNodeData {
   childIds: string[];
   collapsed: boolean;
   asA?: string;
+  iWant?: string;
   soThat?: string;
+  criteria?: string[];
 }
 
 interface WBSSession {
@@ -25,17 +28,6 @@ interface WBSSession {
   participants: Record<string, { username: string }>;
   status: 'active' | 'complete';
   createdAt: number;
-}
-
-interface ExportedStory {
-  id: string;
-  title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  criteria: string[];
-  epic?: string;
-  feature?: string;
 }
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
@@ -281,7 +273,10 @@ interface TreeActions {
   deletingNodeId: string | null;
   detailNodeId: string | null;
   detailAsA: string;
+  detailIWant: string;
   detailSoThat: string;
+  detailCriteria: string[];
+  newDetailCriterion: string;
   setAddingChildOf: (id: string | null) => void;
   setAddingTitle: (t: string) => void;
   setEditingNodeId: (id: string | null) => void;
@@ -289,7 +284,11 @@ interface TreeActions {
   setDeletingNodeId: (id: string | null) => void;
   setDetailNodeId: (id: string | null) => void;
   setDetailAsA: (v: string) => void;
+  setDetailIWant: (v: string) => void;
   setDetailSoThat: (v: string) => void;
+  setDetailCriteria: (v: string[]) => void;
+  setNewDetailCriterion: (v: string) => void;
+  addDetailCriterion: () => void;
   submitAdd: () => void;
   submitEdit: () => void;
   confirmDelete: () => void;
@@ -317,7 +316,7 @@ const TreeNode: React.FC<{
   const canCollapse = childType !== null && node.childIds.length > 0;
   const active = a.sessionStatus === 'active';
   const indent = depth * 32;
-  const hasDetails = !!(node.asA || node.soThat);
+  const hasDetails = !!(node.asA || node.iWant || node.soThat || node.criteria?.length);
 
   return (
     <div>
@@ -390,7 +389,10 @@ const TreeNode: React.FC<{
                       } else {
                         a.setDetailNodeId(nodeId);
                         a.setDetailAsA(node.asA ?? '');
+                        a.setDetailIWant(node.iWant ?? '');
                         a.setDetailSoThat(node.soThat ?? '');
+                        a.setDetailCriteria([...(node.criteria ?? [])]);
+                        a.setNewDetailCriterion('');
                       }
                     }}
                     aria-label={isShowingDetails ? 'Close details' : 'Edit story details'}
@@ -431,6 +433,15 @@ const TreeNode: React.FC<{
             />
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted, width: 60, flexShrink: 0 }}>I WANT</span>
+            <DetailInput
+              value={a.detailIWant}
+              onChange={e => a.setDetailIWant(e.target.value)}
+              placeholder={`goal or action (defaults to "${node.title}")`}
+              aria-label="I want — goal or action"
+            />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted, width: 60, flexShrink: 0 }}>SO THAT</span>
             <DetailInput
               value={a.detailSoThat}
@@ -439,6 +450,31 @@ const TreeNode: React.FC<{
               aria-label="So that — benefit or outcome"
               onKeyDown={e => e.key === 'Enter' && a.submitDetails()}
             />
+          </div>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+            <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted, width: 60, flexShrink: 0, paddingTop: 8 }}>CRITERIA</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <DetailInput
+                  value={a.newDetailCriterion}
+                  onChange={e => a.setNewDetailCriterion(e.target.value)}
+                  onKeyDown={e => e.key === 'Enter' && a.addDetailCriterion()}
+                  placeholder="acceptance criterion..."
+                  aria-label="New acceptance criterion"
+                />
+                <SmallBtn accent={COLORS.lime} onClick={a.addDetailCriterion} aria-label="Add criterion">+</SmallBtn>
+              </div>
+              {a.detailCriteria.map((c, ci) => (
+                <div key={ci} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ color: COLORS.lime, fontSize: 11 }} aria-hidden="true">•</span>
+                  <span className="wf-mono" style={{ fontSize: 11, color: COLORS.secondary, flex: 1 }}>{c}</span>
+                  <SmallBtn
+                    onClick={() => a.setDetailCriteria(a.detailCriteria.filter((_, j) => j !== ci))}
+                    aria-label={`Remove criterion: ${c}`}
+                  >✕</SmallBtn>
+                </div>
+              ))}
+            </div>
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
             <SmallBtn accent={COLORS.lime} onClick={a.submitDetails}>save</SmallBtn>
@@ -498,7 +534,10 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [deletingNodeId, setDeletingNodeId] = useState<string | null>(null);
   const [detailNodeId, setDetailNodeId] = useState<string | null>(null);
   const [detailAsA, setDetailAsA] = useState('');
+  const [detailIWant, setDetailIWant] = useState('');
   const [detailSoThat, setDetailSoThat] = useState('');
+  const [detailCriteria, setDetailCriteria] = useState<string[]>([]);
+  const [newDetailCriterion, setNewDetailCriterion] = useState('');
   const [confirmDone, setConfirmDone] = useState(false);
   const [exportMsg, setExportMsg] = useState('');
 
@@ -580,13 +619,25 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setDeletingNodeId(null);
   };
 
+  const addDetailCriterion = () => {
+    const text = newDetailCriterion.trim();
+    if (!text) return;
+    setDetailCriteria(prev => [...prev, text]);
+    setNewDetailCriterion('');
+  };
+
   const submitDetails = () => {
     if (detailNodeId) {
+      // Include a typed-but-not-added criterion so it isn't silently lost
+      const pending = newDetailCriterion.trim();
+      const criteria = pending ? [...detailCriteria, pending] : detailCriteria;
       socketRef.current?.emit('wbs:updateStoryDetails', {
         roomId: roomCodeRef.current,
         nodeId: detailNodeId,
         asA: detailAsA,
+        iWant: detailIWant,
         soThat: detailSoThat,
+        criteria,
         username,
       });
     }
@@ -606,47 +657,47 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleExport = () => {
     if (!session) return;
-    const stories: ExportedStory[] = [];
-    for (const epicId of session.rootIds) {
-      const epic = session.nodes[epicId];
-      if (!epic) continue;
-      for (const featureId of epic.childIds) {
-        const feature = session.nodes[featureId];
-        if (!feature) continue;
-        for (const storyId of feature.childIds) {
-          const story = session.nodes[storyId];
-          if (!story) continue;
-          stories.push({
-            id: story.id,
-            title: story.title,
-            asA: story.asA ?? '',
-            iWant: story.title,
-            soThat: story.soThat ?? '',
-            criteria: [],
-            epic: epic.title,
-            feature: feature.title,
-          });
-        }
+    const stories: Story[] = [];
+    // Recursive walk: collects every story node regardless of depth, tagging
+    // it with the nearest epic/feature ancestors on the path.
+    const visit = (nodeId: string, epicTitle?: string, featureTitle?: string) => {
+      const node = session.nodes[nodeId];
+      if (!node) return;
+      if (node.type === 'story') {
+        stories.push({
+          id: node.id,
+          title: node.title,
+          asA: node.asA ?? '',
+          iWant: node.iWant?.trim() ? node.iWant : node.title,
+          soThat: node.soThat ?? '',
+          criteria: node.criteria ?? [],
+          ...(epicTitle ? { epic: epicTitle } : {}),
+          ...(featureTitle ? { feature: featureTitle } : {}),
+        });
+        return;
       }
-    }
+      const nextEpic = node.type === 'epic' ? node.title : epicTitle;
+      const nextFeature = node.type === 'feature' ? node.title : featureTitle;
+      node.childIds.forEach(childId => visit(childId, nextEpic, nextFeature));
+    };
+    session.rootIds.forEach(id => visit(id));
+
     if (stories.length === 0) {
       setExportMsg('No stories in the tree yet.');
       setTimeout(() => setExportMsg(''), 3000);
       return;
     }
-    const existing: ExportedStory[] = JSON.parse(localStorage.getItem('agile-free-backlog') ?? '[]');
-    const existingIds = new Set(existing.map(s => s.id));
-    const merged = [...existing, ...stories.filter(s => !existingIds.has(s.id))];
-    localStorage.setItem('agile-free-backlog', JSON.stringify(merged));
+    saveBacklog(mergeStoriesById(loadBacklog(), stories));
     navigate('/stories');
   };
 
   const treeActions: TreeActions = {
     username, sessionStatus: session?.status ?? 'active',
     addingChildOf, addingTitle, editingNodeId, editingTitle, deletingNodeId,
-    detailNodeId, detailAsA, detailSoThat,
+    detailNodeId, detailAsA, detailIWant, detailSoThat, detailCriteria, newDetailCriterion,
     setAddingChildOf, setAddingTitle, setEditingNodeId, setEditingTitle, setDeletingNodeId,
-    setDetailNodeId, setDetailAsA, setDetailSoThat,
+    setDetailNodeId, setDetailAsA, setDetailIWant, setDetailSoThat, setDetailCriteria,
+    setNewDetailCriterion, addDetailCriterion,
     submitAdd, submitEdit, confirmDelete, submitDetails, onToggle,
   };
 

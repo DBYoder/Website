@@ -5,24 +5,15 @@ import { useLocation } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
+import ExportMenu from '../components/ExportMenu';
+import { Story, syncPointsToBacklog } from '../lib/story';
+import { parseStoriesFromCSV } from '../lib/storyCsv';
 
 // --- Types ---
 interface PokerParticipant {
   username: string;
   vote: string | null;
   voted: boolean;
-}
-
-interface Story {
-  id: string;
-  title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  criteria: string[];
-  points?: string;
-  epic?: string;
-  feature?: string;
 }
 
 interface PokerSession {
@@ -33,66 +24,6 @@ interface PokerSession {
 }
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
-
-// --- CSV helpers ---
-const CSV_HEADERS = ['title', 'asA', 'iWant', 'soThat', 'points', 'criteria'];
-
-function escapeCSV(val: string): string {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`;
-  }
-  return val;
-}
-
-function parseCSVRow(line: string): string[] {
-  const fields: string[] = [];
-  let cur = '';
-  let inQuotes = false;
-  for (let i = 0; i < line.length; i++) {
-    const ch = line[i];
-    if (ch === '"') {
-      if (inQuotes && line[i + 1] === '"') { cur += '"'; i++; }
-      else { inQuotes = !inQuotes; }
-    } else if (ch === ',' && !inQuotes) {
-      fields.push(cur); cur = '';
-    } else {
-      cur += ch;
-    }
-  }
-  fields.push(cur);
-  return fields;
-}
-
-function parseStoriesFromCSV(text: string): Story[] {
-  const lines = text.trim().split(/\r?\n/);
-  if (lines.length < 2) return [];
-  const header = parseCSVRow(lines[0]).map(h => h.toLowerCase().trim().replace(/\s+/g, ''));
-  const idx = (key: string) => header.indexOf(key);
-  return lines.slice(1).filter(l => l.trim()).map(line => {
-    const row = parseCSVRow(line);
-    const get = (key: string, fallback = '') => { const i = idx(key); return i >= 0 ? (row[i] ?? fallback) : fallback; };
-    const criteriaStr = get('criteria');
-    return {
-      id: Math.random().toString(36).substr(2, 9),
-      title: get('title'),
-      asA: get('asa'),
-      iWant: get('iwant'),
-      soThat: get('sothat'),
-      points: get('points') || undefined,
-      criteria: criteriaStr ? criteriaStr.split('|').filter(Boolean) : [],
-    };
-  }).filter(s => s.title || s.asA);
-}
-
-function storiesToCSV(stories: Story[]): string {
-  const rows = [
-    CSV_HEADERS.join(','),
-    ...stories.map(s => [
-      s.title, s.asA, s.iWant, s.soThat, s.points ?? '', (s.criteria ?? []).join('|'),
-    ].map(escapeCSV).join(',')),
-  ];
-  return rows.join('\n');
-}
 
 // --- Styles ---
 const PokerContainer = styled.div`
@@ -308,7 +239,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       socket.disconnect();
       socketRef.current = null;
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateRoomUrl = (room: string) => {
     const url = new URL(window.location.href);
@@ -350,29 +281,22 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const handleComplete = (points: string) => {
     if (!session?.currentStory) return;
+    const numeric = parseFloat(points);
+    if (isNaN(numeric)) return;
     socketRef.current?.emit('poker:completeStory', {
       roomId: roomCode,
       storyId: session.currentStory.id,
-      points
+      points: numeric
     });
+    // Estimate flows back to the shared backlog when it lives in this
+    // browser (e.g. the session was launched from the Story tool).
+    syncPointsToBacklog(session.currentStory.id, numeric);
     setSelectedCard(null);
     setCustomPoints('');
   };
 
   const selectStory = (story: Story) => {
     socketRef.current?.emit('poker:selectStory', { roomId: roomCode, story });
-  };
-
-  const handleExport = () => {
-    if (!session) return;
-    const csv = storiesToCSV(session.backlog);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `poker-${roomCode}-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -383,7 +307,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       const text = evt.target?.result as string;
       const stories = parseStoriesFromCSV(text);
       if (stories.length > 0) {
-        socketRef.current?.emit('poker:updateBacklog', { roomId: roomCode, backlog: stories });
+        socketRef.current?.emit('poker:addStories', { roomId: roomCode, stories });
       }
     };
     reader.readAsText(file);
@@ -509,10 +433,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <Btn onClick={() => fileInputRef.current?.click()} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Import stories from CSV">
                   import ↑
                 </Btn>
-                {session.backlog.some(s => s.points) && (
-                  <Btn onClick={handleExport} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Export story points as CSV">
-                    export ↓
-                  </Btn>
+                {session.backlog.length > 0 && (
+                  <ExportMenu
+                    stories={session.backlog}
+                    filePrefix={`poker-${roomCode}`}
+                    buttonStyle={{ fontSize: 10, padding: '4px 10px' }}
+                  />
                 )}
               </div>
             </div>
@@ -535,7 +461,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                     {story.points && <Tag color={COLORS.lime}>{story.points}</Tag>}
                     <button
-                      onClick={e => { e.stopPropagation(); socketRef.current?.emit('poker:updateBacklog', { roomId: roomCode, backlog: session.backlog.filter(s => s.id !== story.id) }); }}
+                      onClick={e => { e.stopPropagation(); socketRef.current?.emit('poker:removeStory', { roomId: roomCode, storyId: story.id }); }}
                       aria-label={`Remove story: ${story.title}`}
                       style={{ appearance: 'none', background: 'none', border: 'none', color: COLORS.muted, cursor: 'pointer', fontSize: 12, padding: '0 2px', flexShrink: 0 }}
                     >✕</button>

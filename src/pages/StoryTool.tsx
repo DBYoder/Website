@@ -5,43 +5,15 @@ import { useNavigate } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Btn, Label, CornerBracket } from '../components/Core';
-
-// --- CSV helpers ---
-function escapeCSV(val: string): string {
-  if (val.includes(',') || val.includes('"') || val.includes('\n')) {
-    return `"${val.replace(/"/g, '""')}"`;
-  }
-  return val;
-}
-
-function storiesToCSV(stories: Story[]): string {
-  const header = ['title', 'asA', 'iWant', 'soThat', 'points', 'criteria'].join(',');
-  const rows = stories.map(s =>
-    [s.title, s.asA, s.iWant, s.soThat, s.points ?? '', (s.criteria ?? []).join('|')]
-      .map(escapeCSV).join(',')
-  );
-  return [header, ...rows].join('\n');
-}
+import ExportMenu from '../components/ExportMenu';
+import { Story, newId, storyTitle, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
+import { parseStoriesFromCSV, parseStoriesFromJSON } from '../lib/storyCsv';
 
 // --- Types ---
-interface Story {
-  id: string;
-  title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  criteria: string[];
-  points?: string;
-  epic?: string;
-  feature?: string;
-}
-
 interface FormData {
   asA: string;
   iWant: string;
   soThat: string;
-  priority: string;
-  points: string;
 }
 
 // --- Styles ---
@@ -201,31 +173,21 @@ const ErrorText = styled.span`
   letter-spacing: 0.1em;
 `;
 
-const STORAGE_KEY = 'agile-free-backlog';
+const EMPTY_FORM: FormData = { asA: '', iWant: '', soThat: '' };
 
 const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const navigate = useNavigate();
   const socketRef = useRef<Socket | null>(null);
+  const importInputRef = useRef<HTMLInputElement>(null);
 
-  const [formData, setFormData] = useState<FormData>({
-    asA: '',
-    iWant: '',
-    soThat: '',
-    priority: 'Medium',
-    points: '3'
-  });
+  const [formData, setFormData] = useState<FormData>(EMPTY_FORM);
 
   const [criteria, setCriteria] = useState<string[]>([]);
   const [newCriterion, setNewCriterion] = useState('');
-  const [backlog, setBacklog] = useState<Story[]>(() => {
-    try {
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? '[]');
-    } catch {
-      return [];
-    }
-  });
+  const [backlog, setBacklog] = useState<Story[]>(loadBacklog);
   const [generated, setGenerated] = useState(false);
   const [copyLabel, setCopyLabel] = useState('copy draft ⎘');
+  const [importMsg, setImportMsg] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editDraft, setEditDraft] = useState({ asA: '', iWant: '', soThat: '', criteria: [] as string[] });
@@ -238,7 +200,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   // Persist backlog to localStorage on change
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(backlog));
+    saveBacklog(backlog);
   }, [backlog]);
 
   useEffect(() => {
@@ -263,17 +225,17 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const addToBacklog = () => {
     const newStory: Story = {
-      title: `${formData.asA}: ${formData.iWant.slice(0, 30)}${formData.iWant.length > 30 ? '...' : ''}`,
+      id: newId(),
+      title: storyTitle(formData.asA, formData.iWant),
       asA: formData.asA,
       iWant: formData.iWant,
       soThat: formData.soThat,
       criteria: [...criteria],
-      id: Math.random().toString(36).substr(2, 9)
     };
     setBacklog(prev => [...prev, newStory]);
     setGenerated(false);
     setCriteria([]);
-    setFormData({ asA: '', iWant: '', soThat: '', priority: 'Medium', points: '3' });
+    setFormData(EMPTY_FORM);
   };
 
   const handleLaunchPoker = () => {
@@ -315,7 +277,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       iWant: editDraft.iWant,
       soThat: editDraft.soThat,
       criteria: editDraft.criteria,
-      title: `${editDraft.asA}: ${editDraft.iWant.slice(0, 30)}${editDraft.iWant.length > 30 ? '...' : ''}`,
+      title: storyTitle(editDraft.asA, editDraft.iWant),
     }));
     setEditingId(null);
   };
@@ -323,21 +285,33 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const handleClearAll = () => {
     setBacklog([]);
     setCriteria([]);
-    setFormData({ asA: '', iWant: '', soThat: '', priority: 'Medium', points: '3' });
+    setFormData(EMPTY_FORM);
     setGenerated(false);
     setConfirmClear(false);
   };
 
-  const handleDownloadCSV = () => {
-    if (backlog.length === 0) return;
-    const csv = storiesToCSV(backlog);
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `backlog-${Date.now()}.csv`;
-    a.click();
-    URL.revokeObjectURL(url);
+  const showImportMsg = (msg: string) => {
+    setImportMsg(msg);
+    setTimeout(() => setImportMsg(''), 3000);
+  };
+
+  const handleImportFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      const text = (evt.target?.result as string) ?? '';
+      const isJSON = file.name.toLowerCase().endsWith('.json') || /^\s*[[{]/.test(text);
+      const stories = isJSON ? parseStoriesFromJSON(text) : parseStoriesFromCSV(text);
+      if (stories.length === 0) {
+        showImportMsg('no stories found in file');
+        return;
+      }
+      setBacklog(prev => mergeStoriesById(prev, stories));
+      showImportMsg(`imported ${stories.length} ${stories.length === 1 ? 'story' : 'stories'}`);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
   };
 
   const handleCopy = () => {
@@ -447,17 +421,33 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
             <Label color={COLORS.purple} size={14}>current backlog ({backlog.length})</Label>
             <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${COLORS.border}, transparent)` }} />
+            {importMsg && (
+              <span className="wf-mono" role="status" style={{ fontSize: 10, color: COLORS.lime }}>{importMsg}</span>
+            )}
             <Btn style={{ fontSize: 11, padding: '6px 16px' }} onClick={handleCopy} aria-label="Copy current story draft to clipboard">
               {copyLabel}
             </Btn>
+            <input
+              ref={importInputRef}
+              type="file"
+              accept=".csv,.json"
+              style={{ display: 'none' }}
+              onChange={handleImportFile}
+              aria-hidden="true"
+            />
             <Btn
-              onClick={handleDownloadCSV}
-              disabled={backlog.length === 0}
-              style={{ fontSize: 11, padding: '6px 16px', opacity: backlog.length === 0 ? 0.4 : 1 }}
-              aria-label="Download backlog as CSV"
+              onClick={() => importInputRef.current?.click()}
+              style={{ fontSize: 11, padding: '6px 16px' }}
+              aria-label="Import stories from CSV or JSON file"
             >
-              download csv ↓
+              import ↑
             </Btn>
+            <ExportMenu
+              stories={backlog}
+              filePrefix="backlog"
+              disabled={backlog.length === 0}
+              buttonStyle={{ fontSize: 11, padding: '6px 16px' }}
+            />
             {confirmClear ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta }}>clear all?</span>

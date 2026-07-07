@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { createServer } from 'http';
+import { randomUUID } from 'crypto';
 import { Server } from 'socket.io';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -47,6 +48,28 @@ for (const r in retroSessions) {
 }
 for (const r in wbsSessions) wbsSessions[r].participants = {};
 
+// Rooms idle beyond the TTL are dropped at startup so the data files don't
+// grow forever. Sessions persisted before lastActivity existed get stamped
+// now and age out from there.
+const SESSION_TTL_MS = 30 * 24 * 60 * 60 * 1000;
+
+function pruneStale(store) {
+  const now = Date.now();
+  for (const roomId in store) {
+    const last = store[roomId].lastActivity ?? store[roomId].createdAt;
+    if (!last) store[roomId].lastActivity = now;
+    else if (now - last > SESSION_TTL_MS) delete store[roomId];
+  }
+}
+pruneStale(pokerSessions);
+pruneStale(retroSessions);
+pruneStale(wbsSessions);
+
+const touch = (session) => { session.lastActivity = Date.now(); };
+
+const RETRO_COLUMNS = ['wentWell', 'toImprove', 'actionItems'];
+const WBS_NODE_TYPES = ['epic', 'feature', 'story'];
+
 const sessions = { poker: pokerSessions, retro: retroSessions, wbs: wbsSessions };
 
 // Maps socket.id → room for cleanup
@@ -63,11 +86,13 @@ io.on('connection', (socket) => {
       sessions.poker[roomId] = { participants: {}, gameState: 'voting', currentStory: null, backlog: [] };
     }
     sessions.poker[roomId].participants[socket.id] = { username, vote: null, voted: false };
+    touch(sessions.poker[roomId]);
     io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
     saveData('poker.json', sessions.poker);
   });
 
   socket.on('poker:updateBacklog', ({ roomId, backlog }) => {
+    if (!Array.isArray(backlog)) return;
     if (!sessions.poker[roomId]) {
       sessions.poker[roomId] = { participants: {}, gameState: 'voting', currentStory: backlog[0] || null, backlog };
     } else {
@@ -76,7 +101,35 @@ io.on('connection', (socket) => {
         sessions.poker[roomId].currentStory = backlog[0];
       }
     }
+    touch(sessions.poker[roomId]);
     io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
+    saveData('poker.json', sessions.poker);
+  });
+
+  // Granular backlog updates: merge/remove by story id so two participants
+  // acting at once don't clobber each other's whole backlog.
+  socket.on('poker:addStories', ({ roomId, stories }) => {
+    const s = sessions.poker[roomId];
+    if (!s || !Array.isArray(stories)) return;
+    for (const story of stories) {
+      if (!story || typeof story.id !== 'string') continue;
+      const idx = s.backlog.findIndex(b => b.id === story.id);
+      if (idx !== -1) s.backlog[idx] = { ...s.backlog[idx], ...story };
+      else s.backlog.push(story);
+    }
+    if (!s.currentStory && s.backlog.length > 0) s.currentStory = s.backlog[0];
+    touch(s);
+    io.to(`poker:${roomId}`).emit('poker:state', s);
+    saveData('poker.json', sessions.poker);
+  });
+
+  socket.on('poker:removeStory', ({ roomId, storyId }) => {
+    const s = sessions.poker[roomId];
+    if (!s) return;
+    s.backlog = s.backlog.filter(b => b.id !== storyId);
+    if (s.currentStory && s.currentStory.id === storyId) s.currentStory = null;
+    touch(s);
+    io.to(`poker:${roomId}`).emit('poker:state', s);
     saveData('poker.json', sessions.poker);
   });
 
@@ -110,15 +163,16 @@ io.on('connection', (socket) => {
 
   socket.on('poker:completeStory', ({ roomId, storyId, points }) => {
     const s = sessions.poker[roomId];
-    if (s) {
-      const idx = s.backlog.findIndex(story => story.id === storyId);
-      if (idx !== -1) s.backlog[idx].points = points;
-      s.currentStory = s.backlog[idx + 1] || null;
-      s.gameState = 'voting';
-      Object.values(s.participants).forEach(p => { p.vote = null; p.voted = false; });
-      io.to(`poker:${roomId}`).emit('poker:state', s);
-      saveData('poker.json', sessions.poker);
-    }
+    if (!s) return;
+    const idx = s.backlog.findIndex(story => story.id === storyId);
+    if (idx === -1) return; // unknown story; -1 would otherwise select backlog[0]
+    s.backlog[idx].points = points;
+    s.currentStory = s.backlog[idx + 1] || null;
+    s.gameState = 'voting';
+    Object.values(s.participants).forEach(p => { p.vote = null; p.voted = false; });
+    touch(s);
+    io.to(`poker:${roomId}`).emit('poker:state', s);
+    saveData('poker.json', sessions.poker);
   });
 
   // --- Retro Board ---
@@ -131,26 +185,27 @@ io.on('connection', (socket) => {
         timer: { isRunning: false, durationSeconds: 0, startedAt: null }
       };
     }
+    touch(sessions.retro[roomId]);
     io.to(`retro:${roomId}`).emit('retro:state', sessions.retro[roomId]);
   });
 
   socket.on('retro:addCard', ({ roomId, colKey, text, username }) => {
     const s = sessions.retro[roomId];
-    if (s) {
-      s.columns[colKey].push({ text, votes: 0, owner: username, id: Math.random().toString(36).substr(2, 9) });
-      io.to(`retro:${roomId}`).emit('retro:state', s);
-      saveData('retro.json', sessions.retro);
-    }
+    if (!s || !RETRO_COLUMNS.includes(colKey) || typeof text !== 'string' || !text.trim()) return;
+    s.columns[colKey].push({ text, votes: 0, owner: username, id: randomUUID() });
+    touch(s);
+    io.to(`retro:${roomId}`).emit('retro:state', s);
+    saveData('retro.json', sessions.retro);
   });
 
   socket.on('retro:vote', ({ roomId, colKey, cardId }) => {
     const s = sessions.retro[roomId];
-    if (s) {
-      const card = s.columns[colKey].find(c => c.id === cardId);
-      if (card) card.votes += 1;
-      io.to(`retro:${roomId}`).emit('retro:state', s);
-      saveData('retro.json', sessions.retro);
-    }
+    if (!s || !RETRO_COLUMNS.includes(colKey)) return;
+    const card = s.columns[colKey].find(c => c.id === cardId);
+    if (card) card.votes += 1;
+    touch(s);
+    io.to(`retro:${roomId}`).emit('retro:state', s);
+    saveData('retro.json', sessions.retro);
   });
 
   socket.on('retro:startTimer', ({ roomId, durationSeconds }) => {
@@ -168,6 +223,7 @@ io.on('connection', (socket) => {
       const idx = col.findIndex(c => c.id === cardId && c.owner === username);
       if (idx !== -1) { col.splice(idx, 1); break; }
     }
+    touch(s);
     io.to(`retro:${roomId}`).emit('retro:state', s);
     saveData('retro.json', sessions.retro);
   });
@@ -188,19 +244,22 @@ io.on('connection', (socket) => {
       sessions.wbs[roomId] = { nodes: {}, rootIds: [], participants: {}, status: 'active', createdAt: Date.now() };
     }
     sessions.wbs[roomId].participants[socket.id] = { username };
+    touch(sessions.wbs[roomId]);
     io.to(`wbs:${roomId}`).emit('wbs:state', sessions.wbs[roomId]);
   });
 
   socket.on('wbs:addNode', ({ roomId, parentId, type, title, username }) => {
     const s = sessions.wbs[roomId];
     if (!s || s.status === 'complete') return;
-    const id = Math.random().toString(36).substr(2, 9);
+    if (!WBS_NODE_TYPES.includes(type) || typeof title !== 'string' || !title.trim()) return;
+    const id = randomUUID();
     s.nodes[id] = { id, type, title, createdBy: username, parentId: parentId || null, childIds: [], collapsed: false };
     if (parentId && s.nodes[parentId]) {
       s.nodes[parentId].childIds.push(id);
     } else {
       s.rootIds.push(id);
     }
+    touch(s);
     io.to(`wbs:${roomId}`).emit('wbs:state', s);
     saveData('wbs.json', sessions.wbs);
   });
@@ -211,6 +270,7 @@ io.on('connection', (socket) => {
     const node = s.nodes[nodeId];
     if (node && node.createdBy === username) {
       node.title = title;
+      touch(s);
       io.to(`wbs:${roomId}`).emit('wbs:state', s);
       saveData('wbs.json', sessions.wbs);
     }
@@ -237,6 +297,7 @@ io.on('connection', (socket) => {
     }
     toDelete.forEach(id => delete s.nodes[id]);
 
+    touch(s);
     io.to(`wbs:${roomId}`).emit('wbs:state', s);
     saveData('wbs.json', sessions.wbs);
   });
@@ -250,6 +311,7 @@ io.on('connection', (socket) => {
       node.iWant = typeof iWant === 'string' ? iWant : '';
       node.soThat = typeof soThat === 'string' ? soThat : '';
       node.criteria = Array.isArray(criteria) ? criteria.filter(c => typeof c === 'string') : [];
+      touch(s);
       io.to(`wbs:${roomId}`).emit('wbs:state', s);
       saveData('wbs.json', sessions.wbs);
     }
@@ -267,6 +329,7 @@ io.on('connection', (socket) => {
     const s = sessions.wbs[roomId];
     if (s) {
       s.status = status;
+      touch(s);
       io.to(`wbs:${roomId}`).emit('wbs:state', s);
       saveData('wbs.json', sessions.wbs);
     }

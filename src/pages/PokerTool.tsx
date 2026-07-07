@@ -307,7 +307,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       const text = evt.target?.result as string;
       const stories = parseStoriesFromCSV(text);
       if (stories.length > 0) {
-        socketRef.current?.emit('poker:updateBacklog', { roomId: roomCode, backlog: stories });
+        socketRef.current?.emit('poker:addStories', { roomId: roomCode, stories });
       }
     };
     reader.readAsText(file);
@@ -461,7 +461,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </div>
                     {story.points && <Tag color={COLORS.lime}>{story.points}</Tag>}
                     <button
-                      onClick={e => { e.stopPropagation(); socketRef.current?.emit('poker:updateBacklog', { roomId: roomCode, backlog: session.backlog.filter(s => s.id !== story.id) }); }}
+                      onClick={e => { e.stopPropagation(); socketRef.current?.emit('poker:removeStory', { roomId: roomCode, storyId: story.id }); }}
                       aria-label={`Remove story: ${story.title}`}
                       style={{ appearance: 'none', background: 'none', border: 'none', color: COLORS.muted, cursor: 'pointer', fontSize: 12, padding: '0 2px', flexShrink: 0 }}
                     >✕</button>

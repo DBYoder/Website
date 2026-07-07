@@ -113,12 +113,58 @@ const Blink = styled.div`
   animation: blink 1s steps(1) infinite;
 `;
 
+const ContactBand = styled.div`
+  border-top: 1px solid ${COLORS.border};
+  padding: 24px 56px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+  background: ${COLORS.surface};
+  @media (max-width: 768px) { padding: 20px; }
+`;
+
+const EmailLink = styled.a`
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  color: ${COLORS.cyan};
+  text-decoration: none;
+  border-bottom: 1px dashed ${COLORS.cyan};
+  &:hover { text-shadow: 0 0 8px ${COLORS.cyan}; }
+`;
+
 interface LandingPageProps {
   onLaunch: (tool: string) => void;
 }
 
 const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
   const [showTutorial, setShowTutorial] = useState(false);
+
+  // The contact email is never in the page or bundle — it's fetched from the
+  // server only when a visitor explicitly asks for it, so scrapers get nothing.
+  const [contactEmail, setContactEmail] = useState('');
+  const [contactState, setContactState] = useState<'idle' | 'loading' | 'shown' | 'error'>('idle');
+  const [copyLabel, setCopyLabel] = useState('copy');
+
+  const revealEmail = async () => {
+    setContactState('loading');
+    try {
+      const res = await fetch('/api/contact-reveal', { method: 'POST' });
+      if (!res.ok) throw new Error(String(res.status));
+      const { email } = await res.json();
+      if (!email) throw new Error('empty');
+      setContactEmail(email);
+      setContactState('shown');
+    } catch {
+      setContactState('error');
+    }
+  };
+
+  const copyEmail = () => {
+    navigator.clipboard.writeText(contactEmail);
+    setCopyLabel('copied!');
+    setTimeout(() => setCopyLabel('copy'), 2000);
+  };
 
   return (
     <Layout>
@@ -224,6 +270,35 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
             </ToolCard>
           ))}
         </ToolGrid>
+
+        <ContactBand>
+          <Label color={COLORS.cyan} size={12}>// contact</Label>
+          <span className="wf-body" style={{ fontSize: 15, color: COLORS.secondary }}>
+            questions, feedback, or feature ideas — get in touch.
+          </span>
+          <div style={{ flex: 1 }} />
+          {contactState === 'shown' ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <EmailLink href={`mailto:${contactEmail}`} rel="nofollow">{contactEmail}</EmailLink>
+              <Btn onClick={copyEmail} style={{ fontSize: 10, padding: '4px 12px' }} aria-label="Copy email address">
+                {copyLabel}
+              </Btn>
+            </div>
+          ) : contactState === 'error' ? (
+            <span className="wf-mono" style={{ fontSize: 11, color: COLORS.magenta }} role="alert">
+              could not load — try again later
+            </span>
+          ) : (
+            <Btn
+              onClick={revealEmail}
+              disabled={contactState === 'loading'}
+              style={{ fontSize: 11, borderColor: COLORS.cyan, color: COLORS.cyan }}
+              aria-label="Reveal contact email address"
+            >
+              {contactState === 'loading' ? '...' : '✉ reveal email'}
+            </Btn>
+          )}
+        </ContactBand>
       </Main>
     </Layout>
   );

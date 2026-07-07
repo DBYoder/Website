@@ -16,6 +16,31 @@ const io = new Server(httpServer, { cors: { origin: '*' } });
 const PORT = process.env.PORT || 3000;
 app.use(express.static(path.join(__dirname, 'dist')));
 
+// --- Contact email reveal ---
+// The address is never present in the served HTML/JS, so page scrapers can't
+// harvest it. It lives here (or in the CONTACT_EMAIL env var, which wins) and
+// is handed out only on an explicit POST, rate-limited per IP. The fallback
+// is stored reversed+base64 so repo-crawling address harvesters miss it too.
+const CONTACT_EMAIL = process.env.CONTACT_EMAIL ||
+  Buffer.from('bW9jLmxpYW1nQDIxcmVkb3liZGl2YWQ=', 'base64').toString().split('').reverse().join('');
+
+const REVEAL_LIMIT = 10;                    // reveals per IP...
+const REVEAL_WINDOW_MS = 60 * 60 * 1000;    // ...per hour
+const revealHits = new Map();
+
+app.post('/api/contact-reveal', (req, res) => {
+  const ip = (req.headers['x-forwarded-for'] || '').split(',')[0].trim() || req.socket.remoteAddress || 'unknown';
+  const now = Date.now();
+  const rec = revealHits.get(ip);
+  if (!rec || now > rec.resetAt) {
+    revealHits.set(ip, { count: 1, resetAt: now + REVEAL_WINDOW_MS });
+  } else if (++rec.count > REVEAL_LIMIT) {
+    return res.status(429).json({ error: 'Too many requests' });
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({ email: CONTACT_EMAIL });
+});
+
 // --- File persistence ---
 const DATA_DIR = path.join(__dirname, 'data');
 fs.mkdirSync(DATA_DIR, { recursive: true });

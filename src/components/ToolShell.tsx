@@ -3,6 +3,7 @@ import styled from 'styled-components';
 import { Link } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import { Tag, Btn, Label } from './Core';
+import Tutorial from './Tutorial';
 
 const M = '@media (max-width: 768px)';
 
@@ -147,6 +148,7 @@ interface ToolShellProps {
 const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, local, children }) => {
   const [copied, setCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
 
   const handleShareLink = () => {
     navigator.clipboard.writeText(window.location.href);
@@ -209,6 +211,9 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, loc
             )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
+            <Btn style={{ fontSize: 12, padding: '8px 12px' }} onClick={() => setShowTutorial(true)} aria-label="Open the tutorial">
+              ?
+            </Btn>
             {!local && (
               <Btn style={{ fontSize: 12 }} onClick={handleShareLink} aria-label="Copy share link to clipboard">
                 {copied ? 'copied!' : 'share'}
@@ -219,6 +224,7 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, loc
         </TopBar>
         {children}
       </Main>
+      {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}
     </ShellLayout>
   );
 };

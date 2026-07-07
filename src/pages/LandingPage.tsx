@@ -1,7 +1,8 @@
-import React from 'react';
+import React, { useState } from 'react';
 import styled from 'styled-components';
 import { COLORS } from '../GlobalStyles';
 import { Box, Label, Tag, Btn, Lines, CornerBracket } from '../components/Core';
+import Tutorial from '../components/Tutorial';
 
 const Layout = styled.div`
   display: flex;
@@ -117,8 +118,11 @@ interface LandingPageProps {
 }
 
 const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
+  const [showTutorial, setShowTutorial] = useState(false);
+
   return (
     <Layout>
+      {showTutorial && <Tutorial onClose={() => setShowTutorial(false)} />}
       <Sidebar>
         <LogoArea>
           <div className="wf-title" style={{ fontSize: 22, color: COLORS.cyan, textShadow: `0 0 10px ${COLORS.cyan}`, letterSpacing: '0.15em' }}>AGILE//FREE</div>
@@ -156,6 +160,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
       <Main>
         <TopBar>
           <span className="wf-mono" style={{ fontSize: 12, color: COLORS.muted }}>~ free pm tools for agile teams</span>
+          <Btn
+            onClick={() => setShowTutorial(true)}
+            style={{ fontSize: 11, borderColor: COLORS.cyan, color: COLORS.cyan }}
+            aria-label="Open the tutorial"
+          >
+            ? how it works
+          </Btn>
         </TopBar>
 
         <HeroSection>

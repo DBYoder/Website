@@ -5,8 +5,9 @@ import { useLocation } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
-import { Story } from '../lib/story';
-import { storiesToCSV, parseStoriesFromCSV, downloadFile, isoDate } from '../lib/storyCsv';
+import ExportMenu from '../components/ExportMenu';
+import { Story, syncPointsToBacklog } from '../lib/story';
+import { parseStoriesFromCSV } from '../lib/storyCsv';
 
 // --- Types ---
 interface PokerParticipant {
@@ -287,17 +288,15 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       storyId: session.currentStory.id,
       points: numeric
     });
+    // Estimate flows back to the shared backlog when it lives in this
+    // browser (e.g. the session was launched from the Story tool).
+    syncPointsToBacklog(session.currentStory.id, numeric);
     setSelectedCard(null);
     setCustomPoints('');
   };
 
   const selectStory = (story: Story) => {
     socketRef.current?.emit('poker:selectStory', { roomId: roomCode, story });
-  };
-
-  const handleExport = () => {
-    if (!session) return;
-    downloadFile(`poker-${roomCode}-${isoDate()}.csv`, storiesToCSV(session.backlog), 'text/csv');
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -434,10 +433,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <Btn onClick={() => fileInputRef.current?.click()} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Import stories from CSV">
                   import ↑
                 </Btn>
-                {session.backlog.some(s => s.points) && (
-                  <Btn onClick={handleExport} style={{ fontSize: 10, padding: '4px 10px' }} aria-label="Export story points as CSV">
-                    export ↓
-                  </Btn>
+                {session.backlog.length > 0 && (
+                  <ExportMenu
+                    stories={session.backlog}
+                    filePrefix={`poker-${roomCode}`}
+                    buttonStyle={{ fontSize: 10, padding: '4px 10px' }}
+                  />
                 )}
               </div>
             </div>

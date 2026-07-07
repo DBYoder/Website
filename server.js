@@ -241,13 +241,15 @@ io.on('connection', (socket) => {
     saveData('wbs.json', sessions.wbs);
   });
 
-  socket.on('wbs:updateStoryDetails', ({ roomId, nodeId, asA, soThat, username }) => {
+  socket.on('wbs:updateStoryDetails', ({ roomId, nodeId, asA, iWant, soThat, criteria, username }) => {
     const s = sessions.wbs[roomId];
     if (!s || s.status === 'complete') return;
     const node = s.nodes[nodeId];
     if (node && node.type === 'story' && node.createdBy === username) {
-      node.asA = asA;
-      node.soThat = soThat;
+      node.asA = typeof asA === 'string' ? asA : '';
+      node.iWant = typeof iWant === 'string' ? iWant : '';
+      node.soThat = typeof soThat === 'string' ? soThat : '';
+      node.criteria = Array.isArray(criteria) ? criteria.filter(c => typeof c === 'string') : [];
       io.to(`wbs:${roomId}`).emit('wbs:state', s);
       saveData('wbs.json', sessions.wbs);
     }

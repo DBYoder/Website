@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import styled from 'styled-components';
 import { io, Socket } from 'socket.io-client';
+import { useNavigate } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
+import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
 
 // --- Types ---
 interface RetroCard {
@@ -254,6 +256,7 @@ const COL_CONFIG: Record<ColKey, { title: string; color: string }> = {
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
 
 const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
+  const navigate = useNavigate();
   const socketRef = useRef<Socket | null>(null);
   const roomCodeRef = useRef('');
   const wasCountingDownRef = useRef(false);
@@ -420,6 +423,27 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     URL.revokeObjectURL(url);
   };
 
+  // Action items usually become backlog work: seed them into the shared
+  // story backlog as drafts (card id doubles as story id so re-sending
+  // updates instead of duplicating) and jump to the Story tool.
+  const handleSendActionItems = () => {
+    const items = session?.columns.actionItems ?? [];
+    if (items.length === 0) return;
+    const retroEpic = `Retro ${new Date().toISOString().slice(0, 10)}`;
+    const stories: Story[] = items.map(card => ({
+      id: card.id,
+      title: card.text.length > 40 ? `${card.text.slice(0, 40)}...` : card.text,
+      asA: '',
+      iWant: card.text,
+      soThat: '',
+      criteria: [],
+      epic: retroEpic,
+      status: 'draft',
+    }));
+    saveBacklog(mergeStoriesById(loadBacklog(), stories));
+    navigate('/stories');
+  };
+
   const formatTime = (seconds: number) => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
@@ -542,6 +566,15 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             </Btn>
           ) : null}
 
+          {session.columns.actionItems.length > 0 && (
+            <Btn
+              onClick={handleSendActionItems}
+              style={{ padding: '8px 20px', borderColor: COLORS.cyan, color: COLORS.cyan }}
+              aria-label={`Send ${session.columns.actionItems.length} action items to the story backlog`}
+            >
+              actions → backlog ({session.columns.actionItems.length})
+            </Btn>
+          )}
           <Btn onClick={handleExport} style={{ padding: '8px 20px' }} aria-label="Export retro notes">
             export ↓
           </Btn>

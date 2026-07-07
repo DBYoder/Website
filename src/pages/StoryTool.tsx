@@ -5,8 +5,9 @@ import { useNavigate } from 'react-router-dom';
 import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Btn, Label, CornerBracket } from '../components/Core';
+import ExportMenu from '../components/ExportMenu';
 import { Story, newId, storyTitle, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
-import { storiesToCSV, parseStoriesFromCSV, parseStoriesFromJSON, downloadFile, isoDate } from '../lib/storyCsv';
+import { parseStoriesFromCSV, parseStoriesFromJSON } from '../lib/storyCsv';
 
 // --- Types ---
 interface FormData {
@@ -289,11 +290,6 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setConfirmClear(false);
   };
 
-  const handleDownloadCSV = () => {
-    if (backlog.length === 0) return;
-    downloadFile(`backlog-${isoDate()}.csv`, storiesToCSV(backlog), 'text/csv');
-  };
-
   const showImportMsg = (msg: string) => {
     setImportMsg(msg);
     setTimeout(() => setImportMsg(''), 3000);
@@ -446,14 +442,12 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             >
               import ↑
             </Btn>
-            <Btn
-              onClick={handleDownloadCSV}
+            <ExportMenu
+              stories={backlog}
+              filePrefix="backlog"
               disabled={backlog.length === 0}
-              style={{ fontSize: 11, padding: '6px 16px', opacity: backlog.length === 0 ? 0.4 : 1 }}
-              aria-label="Download backlog as CSV"
-            >
-              download csv ↓
-            </Btn>
+              buttonStyle={{ fontSize: 11, padding: '6px 16px' }}
+            />
             {confirmClear ? (
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <span className="wf-mono" style={{ fontSize: 10, color: COLORS.magenta }}>clear all?</span>

@@ -1,5 +1,10 @@
 # Improvement Suggestions: Data Structure & Export for Story Development
 
+> **Status:** all eight items below are now implemented on this branch —
+> items 1–3 in `c774373`, items 4–7 in `1efd0fa`, item 8 in `c05a964`.
+> The text below is the original review, kept as the rationale for those
+> changes.
+
 This review focuses on how the data model and export functions across the four tools
 (WBS → Story Generator → Planning Poker, plus Retro Board) can better support the
 full story-development workflow: decompose work, write stories, estimate them, and

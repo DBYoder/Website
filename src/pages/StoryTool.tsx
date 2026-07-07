@@ -173,6 +173,55 @@ const ErrorText = styled.span`
   letter-spacing: 0.1em;
 `;
 
+const BacklogToolbar = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  row-gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 24px;
+`;
+
+const ToolbarDivider = styled.div`
+  flex: 1;
+  min-width: 24px;
+  height: 1px;
+  background: linear-gradient(90deg, ${COLORS.border}, transparent);
+  @media (max-width: 768px) { display: none; }
+`;
+
+const FilterSelect = styled.select`
+  background: ${COLORS.elevated};
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.secondary};
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  padding: 5px 8px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  cursor: pointer;
+  &:focus { outline: none; border-color: ${COLORS.purple}; }
+`;
+
+const MiniTag = styled.span<{ color: string }>`
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 9px;
+  color: ${p => p.color};
+  border: 1px solid ${p => p.color};
+  padding: 1px 5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+`;
+
+const STATUS_COLOR: Record<string, string> = {
+  draft: COLORS.yellow,
+  ready: COLORS.cyan,
+  estimated: COLORS.lime,
+};
+
+const NO_EPIC = '(no epic)';
+
 const EMPTY_FORM: FormData = { asA: '', iWant: '', soThat: '' };
 
 const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
@@ -190,8 +239,12 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [importMsg, setImportMsg] = useState('');
   const [confirmClear, setConfirmClear] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
-  const [editDraft, setEditDraft] = useState({ asA: '', iWant: '', soThat: '', criteria: [] as string[] });
+  const [editDraft, setEditDraft] = useState({
+    asA: '', iWant: '', soThat: '', criteria: [] as string[],
+    points: '', epic: '', feature: '',
+  });
   const [newEditCriterion, setNewEditCriterion] = useState('');
+  const [epicFilter, setEpicFilter] = useState('all');
 
   // Poker launch modal state
   const [showPokerModal, setShowPokerModal] = useState(false);
@@ -259,7 +312,15 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const startEdit = (item: Story) => {
     setEditingId(item.id);
-    setEditDraft({ asA: item.asA, iWant: item.iWant, soThat: item.soThat, criteria: [...(item.criteria ?? [])] });
+    setEditDraft({
+      asA: item.asA,
+      iWant: item.iWant,
+      soThat: item.soThat,
+      criteria: [...(item.criteria ?? [])],
+      points: item.points !== undefined ? String(item.points) : '',
+      epic: item.epic ?? '',
+      feature: item.feature ?? '',
+    });
     setNewEditCriterion('');
   };
 
@@ -271,6 +332,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const saveEdit = (id: string) => {
+    const pts = parseFloat(editDraft.points);
     setBacklog(prev => prev.map(s => s.id !== id ? s : {
       ...s,
       asA: editDraft.asA,
@@ -278,8 +340,22 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       soThat: editDraft.soThat,
       criteria: editDraft.criteria,
       title: storyTitle(editDraft.asA, editDraft.iWant),
+      points: isNaN(pts) ? undefined : pts,
+      epic: editDraft.epic.trim() || undefined,
+      feature: editDraft.feature.trim() || undefined,
     }));
     setEditingId(null);
+  };
+
+  const moveStory = (id: string, dir: -1 | 1) => {
+    setBacklog(prev => {
+      const i = prev.findIndex(s => s.id === id);
+      const j = i + dir;
+      if (i === -1 || j < 0 || j >= prev.length) return prev;
+      const next = [...prev];
+      [next[i], next[j]] = [next[j], next[i]];
+      return next;
+    });
   };
 
   const handleClearAll = () => {
@@ -330,8 +406,14 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setTimeout(() => setCopyLabel('copy draft ⎘'), 2000);
   };
 
+  const totalPoints = backlog.reduce((sum, s) => sum + (s.points ?? 0), 0);
+  const epics = [...new Set(backlog.map(s => s.epic ?? NO_EPIC))];
+  const hasEpics = epics.some(e => e !== NO_EPIC);
+  const filtering = epicFilter !== 'all';
+  const visibleBacklog = filtering ? backlog.filter(s => (s.epic ?? NO_EPIC) === epicFilter) : backlog;
+
   return (
-    <ToolShell toolName="Story Generator" toolColor={COLORS.purple} activeNav="stories" onBack={onBack}>
+    <ToolShell toolName="Story Generator" toolColor={COLORS.purple} activeNav="stories" onBack={onBack} local>
       <StoryContainer>
         <InputPanel>
           <Label color={COLORS.purple} size={14}>story inputs</Label>
@@ -418,9 +500,21 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </InputPanel>
 
         <OutputPanel>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
-            <Label color={COLORS.purple} size={14}>current backlog ({backlog.length})</Label>
-            <div style={{ flex: 1, height: 1, background: `linear-gradient(90deg, ${COLORS.border}, transparent)` }} />
+          <BacklogToolbar>
+            <Label color={COLORS.purple} size={14}>
+              current backlog ({backlog.length}{totalPoints > 0 ? ` · ${totalPoints} pts` : ''})
+            </Label>
+            <ToolbarDivider />
+            {hasEpics && (
+              <FilterSelect
+                value={epicFilter}
+                onChange={e => setEpicFilter(e.target.value)}
+                aria-label="Filter backlog by epic"
+              >
+                <option value="all">all epics</option>
+                {epics.map(e => <option key={e} value={e}>{e}</option>)}
+              </FilterSelect>
+            )}
             {importMsg && (
               <span className="wf-mono" role="status" style={{ fontSize: 10, color: COLORS.lime }}>{importMsg}</span>
             )}
@@ -476,7 +570,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 clear all
               </Btn>
             )}
-          </div>
+          </BacklogToolbar>
 
           <StoryCard>
             <CornerBracket color={COLORS.purple} style={{ top: 0, left: 0 }} size={16} />
@@ -538,23 +632,37 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <Label style={{ color: COLORS.muted, fontSize: 16 }}>No stories in backlog yet</Label>
                   </div>
+                ) : visibleBacklog.length === 0 ? (
+                  <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <Label style={{ color: COLORS.muted, fontSize: 14 }}>No stories match this epic</Label>
+                  </div>
                 ) : (
                   <BacklogList role="list" aria-label="Story backlog">
-                    {backlog.map((item, i) => {
+                    {visibleBacklog.map((item) => {
+                      const num = backlog.indexOf(item) + 1;
                       const incomplete = isIncomplete(item);
                       const editing = editingId === item.id;
                       return (
                         <BacklogItem key={item.id} role="listitem" incomplete={incomplete}>
-                          <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 8, marginBottom: 4 }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{i + 1}</span>
-                              {incomplete && <span className="wf-mono" style={{ fontSize: 9, color: COLORS.magenta, border: `1px solid ${COLORS.magenta}`, padding: '1px 5px', letterSpacing: '0.08em' }}>INCOMPLETE</span>}
+                          <div style={{ display: 'flex', width: '100%', justifyContent: 'space-between', alignItems: 'center', borderBottom: `1px solid ${COLORS.border}`, paddingBottom: 8, marginBottom: 4, gap: 8 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                              <span className="wf-mono" style={{ fontSize: 12, color: COLORS.purple }}>STORY #{num}</span>
+                              {item.points !== undefined && <MiniTag color={COLORS.lime}>{item.points} pts</MiniTag>}
+                              {item.status && <MiniTag color={STATUS_COLOR[item.status] ?? COLORS.muted}>{item.status}</MiniTag>}
+                              {(item.criteria?.length ?? 0) > 0 && <MiniTag color={COLORS.muted}>{item.criteria.length} ac</MiniTag>}
+                              {incomplete && <MiniTag color={COLORS.magenta}>INCOMPLETE</MiniTag>}
                             </div>
-                            <div style={{ display: 'flex', gap: 6 }}>
-                              {!editing && (
-                                <Btn onClick={() => startEdit(item)} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Edit story ${i + 1}`}>edit</Btn>
+                            <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              {!editing && !filtering && (
+                                <>
+                                  <Btn onClick={() => moveStory(item.id, -1)} disabled={num === 1} style={{ fontSize: 10, padding: '4px 7px', opacity: num === 1 ? 0.35 : 1 }} aria-label={`Move story ${num} up`}>▲</Btn>
+                                  <Btn onClick={() => moveStory(item.id, 1)} disabled={num === backlog.length} style={{ fontSize: 10, padding: '4px 7px', opacity: num === backlog.length ? 0.35 : 1 }} aria-label={`Move story ${num} down`}>▼</Btn>
+                                </>
                               )}
-                              <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Remove story ${i + 1}`}>remove</Btn>
+                              {!editing && (
+                                <Btn onClick={() => startEdit(item)} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Edit story ${num}`}>edit</Btn>
+                              )}
+                              <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Remove story ${num}`}>remove</Btn>
                             </div>
                           </div>
 
@@ -578,6 +686,20 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               <div>
                                 <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>SO THAT</Label>
                                 <TextArea value={editDraft.soThat} onChange={e => setEditDraft({ ...editDraft, soThat: e.target.value })} aria-label="Edit so that" />
+                              </div>
+                              <div style={{ display: 'flex', gap: 8 }}>
+                                <div style={{ width: 70 }}>
+                                  <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>POINTS</Label>
+                                  <Input style={{ width: '100%', height: 32, fontSize: 12, padding: '0 8px' }} value={editDraft.points} onChange={e => setEditDraft({ ...editDraft, points: e.target.value })} placeholder="—" aria-label="Edit story points" />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>EPIC</Label>
+                                  <Input style={{ width: '100%', height: 32, fontSize: 12 }} value={editDraft.epic} onChange={e => setEditDraft({ ...editDraft, epic: e.target.value })} placeholder="none" aria-label="Edit epic" />
+                                </div>
+                                <div style={{ flex: 1 }}>
+                                  <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>FEATURE</Label>
+                                  <Input style={{ width: '100%', height: 32, fontSize: 12 }} value={editDraft.feature} onChange={e => setEditDraft({ ...editDraft, feature: e.target.value })} placeholder="none" aria-label="Edit feature" />
+                                </div>
                               </div>
                               <div>
                                 <Label style={{ fontSize: 10, display: 'block', marginBottom: 4 }}>ACCEPTANCE CRITERIA</Label>

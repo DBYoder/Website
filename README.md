@@ -6,6 +6,12 @@ This project contains a suite of agile tools (Planning Poker, Retro Board, Story
 
 The project is configured for seamless deployment on Railway.
 
+> **Persistence note:** the server saves sessions (poker rooms, retro boards,
+> WBS trees) to a local `data/` directory. Container filesystems on Railway
+> are wiped on every redeploy — mount a Railway volume at `/app/data` if
+> sessions should survive deployments. Rooms idle for more than 30 days are
+> pruned automatically at startup.
+
 ### Files Added for Support:
 - `server.js`: Express server with Socket.io support for real-time tool functionality.
 - `package.json`: Updated with `start` script and dependencies (`express`, `socket.io`).

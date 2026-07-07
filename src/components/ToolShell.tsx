@@ -139,10 +139,12 @@ interface ToolShellProps {
   toolColor: string;
   activeNav: string;
   onBack: () => void;
+  /** Tool keeps its data on this device only — shows LOCAL instead of LIVE and hides the share link. */
+  local?: boolean;
   children: React.ReactNode;
 }
 
-const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, children }) => {
+const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, local, children }) => {
   const [copied, setCopied] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
@@ -200,12 +202,18 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, chi
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             <HamburgerBtn onClick={() => setMenuOpen(true)} aria-label="Open navigation menu">☰</HamburgerBtn>
             <NavPath style={{ color: toolColor }}>~/{activeNav}</NavPath>
-            <Tag color={toolColor}>LIVE</Tag>
+            {local ? (
+              <Tag color={COLORS.muted} title="Data is stored in this browser only">LOCAL</Tag>
+            ) : (
+              <Tag color={toolColor}>LIVE</Tag>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Btn style={{ fontSize: 12 }} onClick={handleShareLink} aria-label="Copy share link to clipboard">
-              {copied ? 'copied!' : 'share'}
-            </Btn>
+            {!local && (
+              <Btn style={{ fontSize: 12 }} onClick={handleShareLink} aria-label="Copy share link to clipboard">
+                {copied ? 'copied!' : 'share'}
+              </Btn>
+            )}
             <Btn onClick={onBack} style={{ fontSize: 12 }}>← back</Btn>
           </div>
         </TopBar>

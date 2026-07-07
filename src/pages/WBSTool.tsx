@@ -526,6 +526,7 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [session, setSession] = useState<WBSSession | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [joinError, setJoinError] = useState('');
+  const [roomNotice, setRoomNotice] = useState('');
 
   const [addingChildOf, setAddingChildOf] = useState<string | null>(null);
   const [addingTitle, setAddingTitle] = useState('');
@@ -576,7 +577,9 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (!trimRoom) { setJoinError('Room code is required'); return; }
     setJoinError('');
     setRoomCode(trimRoom);
-    socketRef.current?.emit('wbs:join', { roomId: trimRoom, username: trimUser });
+    socketRef.current?.emit('wbs:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
+      if (!res?.existed) setRoomNotice('room not found — started a new session');
+    });
     setIsJoined(true);
   };
 
@@ -776,6 +779,11 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </Tag>
               )}
             </div>
+            {roomNotice && (
+              <div style={{ marginTop: 10 }}>
+                <Tag color={COLORS.yellow} role="status">{roomNotice}</Tag>
+              </div>
+            )}
           </div>
 
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>

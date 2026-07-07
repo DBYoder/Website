@@ -12,8 +12,11 @@ interface RetroCard {
   id: string;
   text: string;
   votes: number;
+  voters?: string[];
   owner: string;
 }
+
+const VOTE_LIMIT = 3;
 
 type ColKey = 'wentWell' | 'toImprove' | 'actionItems';
 
@@ -279,6 +282,7 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [showTimerInput, setShowTimerInput] = useState(false);
   const [timerMins, setTimerMins] = useState('5');
   const [timerError, setTimerError] = useState('');
+  const [roomNotice, setRoomNotice] = useState('');
 
   // Sync roomCode to ref so effects don't need it as a dependency
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
@@ -345,7 +349,9 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (!trimRoom) { setJoinError('Room code is required'); return; }
     setJoinError('');
     setRoomCode(trimRoom);
-    socketRef.current?.emit('retro:join', { roomId: trimRoom, username: trimUser });
+    socketRef.current?.emit('retro:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
+      if (!res?.existed) setRoomNotice('room not found — started a new board');
+    });
     setIsJoined(true);
   };
 
@@ -369,8 +375,13 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const handleVote = (colKey: ColKey, cardId: string) => {
-    socketRef.current?.emit('retro:vote', { roomId: roomCodeRef.current, colKey, cardId });
+    socketRef.current?.emit('retro:vote', { roomId: roomCodeRef.current, colKey, cardId, username });
   };
+
+  const votesUsed = session
+    ? (Object.values(session.columns) as RetroCard[][]).reduce(
+        (n, cards) => n + cards.filter(c => c.voters?.includes(username)).length, 0)
+    : 0;
 
   const handleDeleteCard = (cardId: string) => {
     socketRef.current?.emit('retro:deleteCard', { roomId: roomCodeRef.current, cardId, username });
@@ -520,6 +531,10 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       <RetroContainer>
         <Toolbar>
           <span className="wf-mono" style={{ fontSize: 13, color: COLORS.magenta }}>Room: {roomCode}</span>
+          {roomNotice && <Tag color={COLORS.yellow} role="status">{roomNotice}</Tag>}
+          <Tag color={votesUsed >= VOTE_LIMIT ? COLORS.muted : COLORS.cyan} aria-label={`${VOTE_LIMIT - votesUsed} of ${VOTE_LIMIT} votes remaining`}>
+            votes {VOTE_LIMIT - votesUsed}/{VOTE_LIMIT}
+          </Tag>
           <div style={{ flex: 1, height: 1, background: COLORS.border }} />
 
           {connectionStatus !== 'connected' && (
@@ -620,16 +635,25 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               </VoteBtn>
                             )
                           )}
-                          <VoteBtn
-                            color={config.color}
-                            onClick={() => handleVote(key, note.id)}
-                            aria-label={`Upvote this card (${note.votes} vote${note.votes !== 1 ? 's' : ''})`}
-                          >
-                            <span style={{ fontSize: 14, color: config.color }} aria-hidden="true">▲</span>
-                            <span className="wf-mono" style={{ fontSize: 13, color: note.votes > 0 ? config.color : COLORS.muted }}>
-                              {note.votes}
-                            </span>
-                          </VoteBtn>
+                          {(() => {
+                            const mine = note.voters?.includes(username) ?? false;
+                            return (
+                              <VoteBtn
+                                color={config.color}
+                                onClick={() => handleVote(key, note.id)}
+                                aria-label={mine
+                                  ? `Remove your vote (${note.votes} vote${note.votes !== 1 ? 's' : ''})`
+                                  : `Upvote this card (${note.votes} vote${note.votes !== 1 ? 's' : ''})`}
+                                aria-pressed={mine}
+                                title={mine ? 'Click to remove your vote' : undefined}
+                              >
+                                <span style={{ fontSize: 14, color: mine ? config.color : COLORS.muted }} aria-hidden="true">▲</span>
+                                <span className="wf-mono" style={{ fontSize: 13, color: note.votes > 0 ? config.color : COLORS.muted }}>
+                                  {note.votes}
+                                </span>
+                              </VoteBtn>
+                            );
+                          })()}
                         </div>
                       </VoteContainer>
                     </RetroCard>

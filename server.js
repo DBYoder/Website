@@ -68,6 +68,7 @@ pruneStale(wbsSessions);
 const touch = (session) => { session.lastActivity = Date.now(); };
 
 const RETRO_COLUMNS = ['wentWell', 'toImprove', 'actionItems'];
+const RETRO_VOTE_LIMIT = 3;
 const WBS_NODE_TYPES = ['epic', 'feature', 'story'];
 
 const sessions = { poker: pokerSessions, retro: retroSessions, wbs: wbsSessions };
@@ -80,9 +81,11 @@ io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
 
   // --- Planning Poker ---
-  socket.on('poker:join', ({ roomId, username }) => {
+  socket.on('poker:join', ({ roomId, username }, ack) => {
     socket.join(`poker:${roomId}`);
-    if (!sessions.poker[roomId]) {
+    const existed = !!sessions.poker[roomId];
+    if (typeof ack === 'function') ack({ existed });
+    if (!existed) {
       sessions.poker[roomId] = { participants: {}, gameState: 'voting', currentStory: null, backlog: [] };
     }
     sessions.poker[roomId].participants[socket.id] = { username, vote: null, voted: false };
@@ -149,6 +152,11 @@ io.on('connection', (socket) => {
     if (s && s.participants[socket.id]) {
       s.participants[socket.id].vote = vote;
       s.participants[socket.id].voted = true;
+      // Auto-reveal once the last participant has voted
+      const everyone = Object.values(s.participants);
+      if (everyone.length > 0 && everyone.every(p => p.voted)) {
+        s.gameState = 'revealed';
+      }
       io.to(`poker:${roomId}`).emit('poker:state', s);
     }
   });
@@ -157,6 +165,15 @@ io.on('connection', (socket) => {
     const s = sessions.poker[roomId];
     if (s) {
       s.gameState = 'revealed';
+      io.to(`poker:${roomId}`).emit('poker:state', s);
+    }
+  });
+
+  socket.on('poker:revote', (roomId) => {
+    const s = sessions.poker[roomId];
+    if (s) {
+      s.gameState = 'voting';
+      Object.values(s.participants).forEach(p => { p.vote = null; p.voted = false; });
       io.to(`poker:${roomId}`).emit('poker:state', s);
     }
   });
@@ -176,9 +193,10 @@ io.on('connection', (socket) => {
   });
 
   // --- Retro Board ---
-  socket.on('retro:join', ({ roomId }) => {
+  socket.on('retro:join', ({ roomId }, ack) => {
     socket.join(`retro:${roomId}`);
     socketRetroRoom[socket.id] = roomId;
+    if (typeof ack === 'function') ack({ existed: !!sessions.retro[roomId] });
     if (!sessions.retro[roomId]) {
       sessions.retro[roomId] = {
         columns: { wentWell: [], toImprove: [], actionItems: [] },
@@ -192,17 +210,33 @@ io.on('connection', (socket) => {
   socket.on('retro:addCard', ({ roomId, colKey, text, username }) => {
     const s = sessions.retro[roomId];
     if (!s || !RETRO_COLUMNS.includes(colKey) || typeof text !== 'string' || !text.trim()) return;
-    s.columns[colKey].push({ text, votes: 0, owner: username, id: randomUUID() });
+    s.columns[colKey].push({ text, votes: 0, voters: [], owner: username, id: randomUUID() });
     touch(s);
     io.to(`retro:${roomId}`).emit('retro:state', s);
     saveData('retro.json', sessions.retro);
   });
 
-  socket.on('retro:vote', ({ roomId, colKey, cardId }) => {
+  // Toggle vote: users have a budget of RETRO_VOTE_LIMIT votes per board;
+  // voting a card they already voted removes that vote. Cards persisted
+  // before voter tracking keep their anonymous baseline count.
+  socket.on('retro:vote', ({ roomId, colKey, cardId, username }) => {
     const s = sessions.retro[roomId];
     if (!s || !RETRO_COLUMNS.includes(colKey)) return;
+    if (typeof username !== 'string' || !username) return;
     const card = s.columns[colKey].find(c => c.id === cardId);
-    if (card) card.votes += 1;
+    if (!card) return;
+    card.voters = card.voters || [];
+    const i = card.voters.indexOf(username);
+    if (i !== -1) {
+      card.voters.splice(i, 1);
+      card.votes = Math.max(0, (card.votes || 0) - 1);
+    } else {
+      const used = RETRO_COLUMNS.reduce((n, k) =>
+        n + s.columns[k].reduce((m, c) => m + ((c.voters || []).includes(username) ? 1 : 0), 0), 0);
+      if (used >= RETRO_VOTE_LIMIT) return;
+      card.voters.push(username);
+      card.votes = (card.votes || 0) + 1;
+    }
     touch(s);
     io.to(`retro:${roomId}`).emit('retro:state', s);
     saveData('retro.json', sessions.retro);
@@ -237,9 +271,10 @@ io.on('connection', (socket) => {
   });
 
   // --- Work Breakdown Structure ---
-  socket.on('wbs:join', ({ roomId, username }) => {
+  socket.on('wbs:join', ({ roomId, username }, ack) => {
     socket.join(`wbs:${roomId}`);
     socketWBSRoom[socket.id] = roomId;
+    if (typeof ack === 'function') ack({ existed: !!sessions.wbs[roomId] });
     if (!sessions.wbs[roomId]) {
       sessions.wbs[roomId] = { nodes: {}, rootIds: [], participants: {}, status: 'active', createdAt: Date.now() };
     }

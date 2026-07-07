@@ -209,6 +209,8 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [customPoints, setCustomPoints] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [joinError, setJoinError] = useState('');
+  const [roomNotice, setRoomNotice] = useState('');
+  const prevGameStateRef = useRef<string | null>(null);
 
   useEffect(() => {
     const socket = io(window.location.origin);
@@ -241,6 +243,17 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     };
   }, []);
 
+  // When a re-vote (or story change from another client) flips the state
+  // back to voting, clear this participant's local card selection too.
+  const gameState = session?.gameState ?? null;
+  useEffect(() => {
+    if (prevGameStateRef.current === 'revealed' && gameState === 'voting') {
+      setSelectedCard(null);
+      setCustomPoints('');
+    }
+    prevGameStateRef.current = gameState;
+  }, [gameState]);
+
   const updateRoomUrl = (room: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set('room', room);
@@ -254,7 +267,9 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (!trimRoom || !/^[A-Z0-9]+$/.test(trimRoom)) { setJoinError('Enter a valid room code'); return; }
     setJoinError('');
     setRoomCode(trimRoom);
-    socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser });
+    socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
+      if (!res?.existed) setRoomNotice('room not found — started a new session');
+    });
     setIsJoined(true);
     updateRoomUrl(trimRoom);
   };
@@ -424,6 +439,11 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </Tag>
               )}
             </div>
+            {roomNotice && (
+              <div style={{ marginTop: 10 }}>
+                <Tag color={COLORS.yellow} role="status">{roomNotice}</Tag>
+              </div>
+            )}
           </div>
 
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
@@ -596,7 +616,17 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </StatItem>
               </StatsGrid>
 
-              <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end' }}>
+              <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                <div>
+                  <Label style={{ display: 'block', marginBottom: 8 }}>Not aligned?</Label>
+                  <Btn
+                    onClick={() => socketRef.current?.emit('poker:revote', roomCode)}
+                    style={{ padding: '16px 20px' }}
+                    aria-label="Clear all votes and vote again"
+                  >
+                    ↺ re-vote
+                  </Btn>
+                </div>
                 <div style={{ flex: 1 }}>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Accept Consensus ({consensus})</Label>
                   <Btn

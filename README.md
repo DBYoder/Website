@@ -6,6 +6,12 @@ This project contains a suite of agile tools (Planning Poker, Retro Board, Story
 
 The project is configured for seamless deployment on Railway.
 
+> **Contact email:** the landing page's contact section fetches the address
+> from the server on demand (`POST /api/contact-reveal`, rate-limited) so it
+> never appears in the HTML or JS bundle where scrapers could harvest it.
+> Set the `CONTACT_EMAIL` environment variable on the host to change the
+> address without touching code.
+
 > **Persistence note:** the server saves sessions (poker rooms, retro boards,
 > WBS trees) to a local `data/` directory. Container filesystems on Railway
 > are wiped on every redeploy — mount a Railway volume at `/app/data` if

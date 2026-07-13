@@ -6,7 +6,7 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
 import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
-import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom } from '../lib/session';
+import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom, getActiveSharedBacklog } from '../lib/session';
 
 // --- Types ---
 interface RetroCard {
@@ -472,8 +472,16 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       epic: retroEpic,
       status: 'draft',
     }));
-    saveBacklog(mergeStoriesById(loadBacklog(), stories));
-    navigate('/stories');
+    // Target the shared backlog if this browser is connected to one, so the
+    // action items reach the whole team; otherwise write the local backlog.
+    const shared = getActiveSharedBacklog();
+    if (shared) {
+      socketRef.current?.emit('backlog:upsert', { roomId: shared, stories });
+      navigate(`/stories?backlog=${shared}`);
+    } else {
+      saveBacklog(mergeStoriesById(loadBacklog(), stories));
+      navigate('/stories');
+    }
   };
 
   const formatTime = (seconds: number) => {

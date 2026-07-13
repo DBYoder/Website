@@ -6,7 +6,7 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
 import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
-import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom } from '../lib/session';
+import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom, getActiveSharedBacklog } from '../lib/session';
 
 // --- Types ---
 interface WBSNodeData {
@@ -711,8 +711,16 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setTimeout(() => setExportMsg(''), 3000);
       return;
     }
-    saveBacklog(mergeStoriesById(loadBacklog(), stories));
-    navigate('/stories');
+    // Target the shared backlog when this browser is connected to one, so the
+    // exported stories reach the whole team; otherwise write local.
+    const shared = getActiveSharedBacklog();
+    if (shared) {
+      socketRef.current?.emit('backlog:upsert', { roomId: shared, stories });
+      navigate(`/stories?backlog=${shared}`);
+    } else {
+      saveBacklog(mergeStoriesById(loadBacklog(), stories));
+      navigate('/stories');
+    }
   };
 
   const treeActions: TreeActions = {

@@ -66,6 +66,7 @@ function saveData(filename, data) {
 const pokerSessions = loadData('poker.json', {});
 const retroSessions = loadData('retro.json', {});
 const wbsSessions   = loadData('wbs.json', {});
+const backlogSessions = loadData('backlog.json', {});
 
 for (const r in pokerSessions) pokerSessions[r].participants = {};
 for (const r in retroSessions) {
@@ -89,14 +90,38 @@ function pruneStale(store) {
 pruneStale(pokerSessions);
 pruneStale(retroSessions);
 pruneStale(wbsSessions);
+pruneStale(backlogSessions);
 
 const touch = (session) => { session.lastActivity = Date.now(); };
+
+// Coerce an incoming story to a safe shape before it enters a shared backlog.
+function sanitizeStory(raw) {
+  if (!raw || typeof raw !== 'object') return null;
+  const str = (v) => (typeof v === 'string' ? v : '');
+  const id = str(raw.id);
+  if (!id) return null;
+  const story = {
+    id,
+    title: str(raw.title),
+    asA: str(raw.asA),
+    iWant: str(raw.iWant),
+    soThat: str(raw.soThat),
+    criteria: Array.isArray(raw.criteria) ? raw.criteria.filter(c => typeof c === 'string') : [],
+  };
+  if (raw.points !== undefined && raw.points !== null && raw.points !== '' && !isNaN(Number(raw.points))) {
+    story.points = Number(raw.points);
+  }
+  if (str(raw.epic)) story.epic = str(raw.epic);
+  if (str(raw.feature)) story.feature = str(raw.feature);
+  if (['draft', 'ready', 'estimated'].includes(raw.status)) story.status = raw.status;
+  return story;
+}
 
 const RETRO_COLUMNS = ['wentWell', 'toImprove', 'actionItems'];
 const RETRO_VOTE_LIMIT = 3;
 const WBS_NODE_TYPES = ['epic', 'feature', 'story'];
 
-const sessions = { poker: pokerSessions, retro: retroSessions, wbs: wbsSessions };
+const sessions = { poker: pokerSessions, retro: retroSessions, wbs: wbsSessions, backlog: backlogSessions };
 
 // Maps socket.id → room for cleanup
 const socketRetroRoom = {};
@@ -397,6 +422,91 @@ io.on('connection', (socket) => {
       io.to(`wbs:${roomId}`).emit('wbs:state', s);
       saveData('wbs.json', sessions.wbs);
     }
+  });
+
+  // --- Shared backlog (opt-in; the Story tool is local-only by default) ---
+  // A backlog room is just a { stories: [...] } document keyed by room code.
+  function emitBacklog(roomId) {
+    const s = sessions.backlog[roomId];
+    io.to(`backlog:${roomId}`).emit('backlog:state', { stories: s.stories });
+  }
+
+  socket.on('backlog:join', ({ roomId }, ack) => {
+    if (typeof roomId !== 'string' || !roomId) return;
+    socket.join(`backlog:${roomId}`);
+    const existed = !!sessions.backlog[roomId];
+    if (typeof ack === 'function') ack({ existed });
+    if (!existed) {
+      sessions.backlog[roomId] = { stories: [], createdAt: Date.now() };
+    }
+    touch(sessions.backlog[roomId]);
+    socket.emit('backlog:state', { stories: sessions.backlog[roomId].stories });
+    saveData('backlog.json', sessions.backlog);
+  });
+
+  // Merge stories by id: existing ids update in place (only non-empty
+  // incoming fields overwrite), new ids append — mirrors mergeStoriesById.
+  socket.on('backlog:upsert', ({ roomId, stories }) => {
+    const s = sessions.backlog[roomId];
+    if (!s || !Array.isArray(stories)) return;
+    for (const raw of stories) {
+      const story = sanitizeStory(raw);
+      if (!story) continue;
+      const idx = s.stories.findIndex(x => x.id === story.id);
+      if (idx === -1) {
+        s.stories.push(story);
+      } else {
+        const informative = Object.fromEntries(
+          Object.entries(story).filter(([, v]) =>
+            v !== undefined && v !== '' && !(Array.isArray(v) && v.length === 0))
+        );
+        s.stories[idx] = { ...s.stories[idx], ...informative };
+      }
+    }
+    touch(s);
+    emitBacklog(roomId);
+    saveData('backlog.json', sessions.backlog);
+  });
+
+  // Full replace — used for reordering and inline edits where fields may clear.
+  socket.on('backlog:replace', ({ roomId, stories }) => {
+    const s = sessions.backlog[roomId];
+    if (!s || !Array.isArray(stories)) return;
+    s.stories = stories.map(sanitizeStory).filter(Boolean);
+    touch(s);
+    emitBacklog(roomId);
+    saveData('backlog.json', sessions.backlog);
+  });
+
+  socket.on('backlog:remove', ({ roomId, storyId }) => {
+    const s = sessions.backlog[roomId];
+    if (!s) return;
+    s.stories = s.stories.filter(x => x.id !== storyId);
+    touch(s);
+    emitBacklog(roomId);
+    saveData('backlog.json', sessions.backlog);
+  });
+
+  socket.on('backlog:clear', ({ roomId }) => {
+    const s = sessions.backlog[roomId];
+    if (!s) return;
+    s.stories = [];
+    touch(s);
+    emitBacklog(roomId);
+    saveData('backlog.json', sessions.backlog);
+  });
+
+  // Cross-device estimate sync: poker writes accepted points here by story id.
+  socket.on('backlog:setPoints', ({ roomId, storyId, points }) => {
+    const s = sessions.backlog[roomId];
+    if (!s || isNaN(Number(points))) return;
+    const story = s.stories.find(x => x.id === storyId);
+    if (!story) return;
+    story.points = Number(points);
+    story.status = 'estimated';
+    touch(s);
+    emitBacklog(roomId);
+    saveData('backlog.json', sessions.backlog);
   });
 
   socket.on('disconnect', () => {

@@ -226,6 +226,9 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [joinError, setJoinError] = useState('');
   const [roomNotice, setRoomNotice] = useState('');
   const prevGameStateRef = useRef<string | null>(null);
+  // If launched from a shared backlog, this is its room code; accepted
+  // estimates are synced back to it for cross-device teams.
+  const backlogRoomRef = useRef<string | null>(null);
 
   useEffect(() => {
     const socket = io(window.location.origin);
@@ -240,6 +243,11 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const params = new URLSearchParams(initialSearchRef.current);
     const urlRoom = params.get('room');
     const urlUser = params.get('user');
+    const urlBacklog = params.get('backlog');
+    if (urlBacklog) {
+      backlogRoomRef.current = urlBacklog.toUpperCase();
+      socket.emit('backlog:join', { roomId: backlogRoomRef.current });
+    }
 
     if (urlRoom && urlUser) {
       const room = urlRoom.toUpperCase();
@@ -331,9 +339,17 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       storyId: session.currentStory.id,
       points: numeric
     });
-    // Estimate flows back to the shared backlog when it lives in this
-    // browser (e.g. the session was launched from the Story tool).
+    // Estimate flows back to the local backlog (same browser) and, when the
+    // session was launched from a shared backlog, to that room too so remote
+    // teammates get the points.
     syncPointsToBacklog(session.currentStory.id, numeric);
+    if (backlogRoomRef.current) {
+      socketRef.current?.emit('backlog:setPoints', {
+        roomId: backlogRoomRef.current,
+        storyId: session.currentStory.id,
+        points: numeric,
+      });
+    }
     setSelectedCard(null);
     setCustomPoints('');
   };

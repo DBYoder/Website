@@ -8,6 +8,7 @@ import { Btn, Label, CornerBracket } from '../components/Core';
 import ExportMenu from '../components/ExportMenu';
 import { Story, newId, storyTitle, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
 import { parseStoriesFromCSV, parseStoriesFromJSON } from '../lib/storyCsv';
+import { getActiveSharedBacklog, setActiveSharedBacklog } from '../lib/session';
 
 // --- Types ---
 interface FormData {
@@ -246,24 +247,87 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [newEditCriterion, setNewEditCriterion] = useState('');
   const [epicFilter, setEpicFilter] = useState('all');
 
+  // Shared-backlog state: null = local-only (default). When set, the backlog
+  // is a server room synced over the socket. A ref mirrors it for use inside
+  // socket callbacks and the commit path.
+  const [sharedCode, setSharedCode] = useState<string | null>(null);
+  const sharedCodeRef = useRef<string | null>(null);
+  const [shareCopied, setShareCopied] = useState(false);
+
   // Poker launch modal state
   const [showPokerModal, setShowPokerModal] = useState(false);
   const [pokerUsername, setPokerUsername] = useState('');
   const [pokerError, setPokerError] = useState('');
 
-  // Persist backlog to localStorage on change
-  useEffect(() => {
-    saveBacklog(backlog);
-  }, [backlog]);
-
   useEffect(() => {
     const socket = io(window.location.origin);
     socketRef.current = socket;
+    // Shared backlog updates arrive here; ignore if we've since gone local.
+    socket.on('backlog:state', ({ stories }: { stories: Story[] }) => {
+      if (sharedCodeRef.current) setBacklog(stories);
+    });
+
+    // Auto-connect: ?backlog=CODE in the URL wins, else a previously active
+    // shared backlog reconnects so a refresh stays in the shared room.
+    const urlCode = new URLSearchParams(window.location.search).get('backlog');
+    const resume = (urlCode || getActiveSharedBacklog() || '').toUpperCase();
+    if (resume) connectShared(resume, false);
+
     return () => {
       socket.disconnect();
       socketRef.current = null;
     };
   }, []);
+
+  // Single write path: in shared mode emit to the room (server echoes state
+  // back); in local mode set state and persist to localStorage.
+  const commitBacklog = (next: Story[]) => {
+    if (sharedCodeRef.current) {
+      setBacklog(next); // optimistic; server echo reconciles
+      socketRef.current?.emit('backlog:replace', { roomId: sharedCodeRef.current, stories: next });
+    } else {
+      setBacklog(next);
+      saveBacklog(next);
+    }
+  };
+
+  const connectShared = (code: string, seedFromLocal: boolean) => {
+    const room = code.trim().toUpperCase();
+    if (!room) return;
+    const seed = seedFromLocal ? loadBacklog() : [];
+    sharedCodeRef.current = room;
+    setSharedCode(room);
+    setActiveSharedBacklog(room);
+    socketRef.current?.emit('backlog:join', { roomId: room }, () => {
+      if (seed.length > 0) socketRef.current?.emit('backlog:upsert', { roomId: room, stories: seed });
+    });
+    const url = new URL(window.location.href);
+    url.searchParams.set('backlog', room);
+    window.history.replaceState(null, '', url.toString());
+  };
+
+  const disconnectShared = () => {
+    sharedCodeRef.current = null;
+    setSharedCode(null);
+    setActiveSharedBacklog(null);
+    const url = new URL(window.location.href);
+    url.searchParams.delete('backlog');
+    window.history.replaceState(null, '', url.toString());
+    setBacklog(loadBacklog()); // fall back to this browser's local backlog
+  };
+
+  const startShare = () => connectShared(Math.random().toString(36).substring(2, 8).toUpperCase(), true);
+
+  const handleJoinShared = () => {
+    const code = window.prompt('Enter the shared backlog code to join:')?.trim().toUpperCase();
+    if (code) connectShared(code, false);
+  };
+
+  const handleCopyShareLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setShareCopied(true);
+    setTimeout(() => setShareCopied(false), 2000);
+  };
 
   const handleGenerate = () => {
     setGenerated(true);
@@ -285,7 +349,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       soThat: formData.soThat,
       criteria: [...criteria],
     };
-    setBacklog(prev => [...prev, newStory]);
+    commitBacklog([...backlog, newStory]);
     setGenerated(false);
     setCriteria([]);
     setFormData(EMPTY_FORM);
@@ -305,7 +369,10 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setShowPokerModal(false);
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     socketRef.current?.emit('poker:updateBacklog', { roomId: newCode, backlog });
-    navigate(`/poker?room=${newCode}&user=${encodeURIComponent(trimUser)}`);
+    // Carry the shared-backlog code so poker can sync accepted points back to
+    // it cross-device (local backlogs sync via localStorage instead).
+    const backlogParam = sharedCodeRef.current ? `&backlog=${sharedCodeRef.current}` : '';
+    navigate(`/poker?room=${newCode}&user=${encodeURIComponent(trimUser)}${backlogParam}`);
   };
 
   const isIncomplete = (s: Story) => !s.asA.trim() || !s.iWant.trim() || !s.soThat.trim();
@@ -333,7 +400,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const saveEdit = (id: string) => {
     const pts = parseFloat(editDraft.points);
-    setBacklog(prev => prev.map(s => s.id !== id ? s : {
+    commitBacklog(backlog.map(s => s.id !== id ? s : {
       ...s,
       asA: editDraft.asA,
       iWant: editDraft.iWant,
@@ -348,18 +415,16 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   };
 
   const moveStory = (id: string, dir: -1 | 1) => {
-    setBacklog(prev => {
-      const i = prev.findIndex(s => s.id === id);
-      const j = i + dir;
-      if (i === -1 || j < 0 || j >= prev.length) return prev;
-      const next = [...prev];
-      [next[i], next[j]] = [next[j], next[i]];
-      return next;
-    });
+    const i = backlog.findIndex(s => s.id === id);
+    const j = i + dir;
+    if (i === -1 || j < 0 || j >= backlog.length) return;
+    const next = [...backlog];
+    [next[i], next[j]] = [next[j], next[i]];
+    commitBacklog(next);
   };
 
   const handleClearAll = () => {
-    setBacklog([]);
+    commitBacklog([]);
     setCriteria([]);
     setFormData(EMPTY_FORM);
     setGenerated(false);
@@ -383,7 +448,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         showImportMsg('no stories found in file');
         return;
       }
-      setBacklog(prev => mergeStoriesById(prev, stories));
+      commitBacklog(mergeStoriesById(backlog, stories));
       showImportMsg(`imported ${stories.length} ${stories.length === 1 ? 'story' : 'stories'}`);
     };
     reader.readAsText(file);
@@ -413,7 +478,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const visibleBacklog = filtering ? backlog.filter(s => (s.epic ?? NO_EPIC) === epicFilter) : backlog;
 
   return (
-    <ToolShell toolName="Story Generator" toolColor={COLORS.purple} activeNav="stories" onBack={onBack} local>
+    <ToolShell toolName="Story Generator" toolColor={COLORS.purple} activeNav="stories" onBack={onBack} local={!sharedCode}>
       <StoryContainer>
         <InputPanel>
           <Label color={COLORS.purple} size={14}>story inputs</Label>
@@ -500,6 +565,35 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         </InputPanel>
 
         <OutputPanel>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16, flexWrap: 'wrap' }}>
+            {sharedCode ? (
+              <>
+                <MiniTag color={COLORS.lime}>shared</MiniTag>
+                <span className="wf-mono" style={{ fontSize: 12, color: COLORS.secondary }}>
+                  room <b style={{ color: COLORS.lime }}>{sharedCode}</b> — synced across everyone with the link
+                </span>
+                <Btn onClick={handleCopyShareLink} style={{ fontSize: 10, padding: '4px 12px' }} aria-label="Copy shared backlog link">
+                  {shareCopied ? 'copied!' : 'copy link'}
+                </Btn>
+                <Btn onClick={disconnectShared} style={{ fontSize: 10, padding: '4px 12px' }} aria-label="Leave shared backlog and switch to local">
+                  switch to local
+                </Btn>
+              </>
+            ) : (
+              <>
+                <MiniTag color={COLORS.muted}>local</MiniTag>
+                <span className="wf-mono" style={{ fontSize: 12, color: COLORS.muted }}>
+                  stored in this browser only
+                </span>
+                <Btn onClick={startShare} style={{ fontSize: 10, padding: '4px 12px', borderColor: COLORS.lime, color: COLORS.lime }} aria-label="Share this backlog with a room code">
+                  ⇄ share backlog
+                </Btn>
+                <Btn onClick={handleJoinShared} style={{ fontSize: 10, padding: '4px 12px' }} aria-label="Join an existing shared backlog by code">
+                  join shared
+                </Btn>
+              </>
+            )}
+          </div>
           <BacklogToolbar>
             <Label color={COLORS.purple} size={14}>
               current backlog ({backlog.length}{totalPoints > 0 ? ` · ${totalPoints} pts` : ''})
@@ -662,7 +756,7 @@ const StoryTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               {!editing && (
                                 <Btn onClick={() => startEdit(item)} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Edit story ${num}`}>edit</Btn>
                               )}
-                              <Btn onClick={() => setBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Remove story ${num}`}>remove</Btn>
+                              <Btn onClick={() => commitBacklog(backlog.filter(b => b.id !== item.id))} style={{ fontSize: 10, padding: '4px 8px' }} aria-label={`Remove story ${num}`}>remove</Btn>
                             </div>
                           </div>
 

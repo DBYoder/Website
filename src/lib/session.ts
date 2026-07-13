@@ -40,3 +40,23 @@ export function addRecentRoom(tool: Tool, code: string): void {
     localStorage.setItem(RECENT_PREFIX + tool, JSON.stringify(next));
   } catch { /* ignore */ }
 }
+
+// The room code of the shared backlog this browser is currently connected to,
+// or null when the Story tool is in its default local-only mode. Retro and WBS
+// read this to decide whether "send to backlog" targets the shared room.
+const ACTIVE_BACKLOG_KEY = 'agile-free-shared-backlog';
+
+export function getActiveSharedBacklog(): string | null {
+  try {
+    return localStorage.getItem(ACTIVE_BACKLOG_KEY) || null;
+  } catch {
+    return null;
+  }
+}
+
+export function setActiveSharedBacklog(code: string | null): void {
+  try {
+    if (code) localStorage.setItem(ACTIVE_BACKLOG_KEY, code.trim().toUpperCase());
+    else localStorage.removeItem(ACTIVE_BACKLOG_KEY);
+  } catch { /* ignore */ }
+}

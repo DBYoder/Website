@@ -22,6 +22,7 @@ interface PokerSession {
   gameState: 'voting' | 'revealed';
   currentStory: Story | null;
   backlog: Story[];
+  status?: 'active' | 'complete';
 }
 
 type ConnectionStatus = 'connecting' | 'connected' | 'error';
@@ -225,6 +226,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
   const [joinError, setJoinError] = useState('');
   const [roomNotice, setRoomNotice] = useState('');
+  const [confirmComplete, setConfirmComplete] = useState(false);
   const prevGameStateRef = useRef<string | null>(null);
   // If launched from a shared backlog, this is its room code; accepted
   // estimates are synced back to it for cross-device teams.
@@ -255,7 +257,9 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       setUsername(urlUser);
       saveUsername(urlUser);
       addRecentRoom('poker', room);
-      socket.emit('poker:join', { roomId: room, username: urlUser });
+      socket.emit('poker:join', { roomId: room, username: urlUser }, (res: { existed: boolean; nameTaken: boolean }) => {
+        if (res?.nameTaken) setRoomNotice(`heads up: "${urlUser}" is already in this room — you'll share a vote slot`);
+      });
       setIsJoined(true);
       const url = new URL(window.location.href);
       url.searchParams.set('room', room);
@@ -305,8 +309,9 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     if (!trimRoom || !/^[A-Z0-9]+$/.test(trimRoom)) { setJoinError('Enter a valid room code'); return; }
     setJoinError('');
     setRoomCode(trimRoom);
-    socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
+    socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean; nameTaken: boolean }) => {
       if (!res?.existed) setRoomNotice('room not found — started a new session');
+      else if (res.nameTaken) setRoomNotice(`heads up: "${trimUser}" is already in this room — you'll share a vote slot`);
     });
     enterRoom(trimRoom, trimUser);
   };
@@ -450,6 +455,11 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const participants = Object.values(session.participants);
   const cards = ['1', '2', '3', '5', '8', '13', '21', '?', '☕'];
   const votedCount = participants.filter(p => p.voted).length;
+  const isComplete = session.status === 'complete';
+  const toggleComplete = () => {
+    socketRef.current?.emit('poker:setStatus', { roomId: roomCode, status: isComplete ? 'active' : 'complete' });
+    setConfirmComplete(false);
+  };
 
   const numericVotes = participants
     .map(p => parseFloat(p.vote ?? ''))
@@ -489,11 +499,11 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             <Label color={COLORS.cyan} style={{ display: 'block', marginBottom: 12, fontSize: 13 }}>
               session: {roomCode}
             </Label>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <Tag color={session.gameState === 'voting' ? COLORS.lime : COLORS.magenta}>
-                {session.gameState.toUpperCase()}
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              <Tag color={isComplete ? COLORS.muted : session.gameState === 'voting' ? COLORS.lime : COLORS.magenta}>
+                {isComplete ? 'COMPLETE' : session.gameState.toUpperCase()}
               </Tag>
-              {session.gameState === 'voting' && (
+              {!isComplete && session.gameState === 'voting' && (
                 <span className="wf-mono" style={{ fontSize: 11, color: COLORS.muted }}>
                   {votedCount}/{participants.length} voted
                 </span>
@@ -509,6 +519,21 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 <Tag color={COLORS.yellow} role="status">{roomNotice}</Tag>
               </div>
             )}
+            <div style={{ marginTop: 12 }}>
+              {confirmComplete ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>
+                    {isComplete ? 'reopen session?' : 'mark complete?'}
+                  </span>
+                  <Btn onClick={toggleComplete} style={{ fontSize: 10, padding: '4px 10px', borderColor: COLORS.cyan, color: COLORS.cyan }}>yes</Btn>
+                  <Btn onClick={() => setConfirmComplete(false)} style={{ fontSize: 10, padding: '4px 10px' }}>no</Btn>
+                </div>
+              ) : (
+                <Btn onClick={() => setConfirmComplete(true)} style={{ fontSize: 10, padding: '4px 12px' }} aria-label={isComplete ? 'Reopen session' : 'Mark session complete'}>
+                  {isComplete ? 'reopen session' : 'mark complete'}
+                </Btn>
+              )}
+            </div>
           </div>
 
           <div style={{ padding: '20px 24px', borderBottom: `1px solid ${COLORS.border}` }}>
@@ -630,6 +655,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
             )}
           </div>
 
+          {isComplete && (
+            <div style={{ marginBottom: 24 }}>
+              <Tag color={COLORS.muted} role="status">session complete — read only</Tag>
+            </div>
+          )}
+
           {session.gameState === 'voting' ? (
             <>
               <div style={{ display: 'flex', alignItems: 'center', gap: 16, marginBottom: 32 }}>
@@ -643,7 +674,9 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     key={val}
                     active={selectedCard === val}
                     color={COLORS.cyan}
-                    onClick={() => handleVote(val)}
+                    onClick={() => !isComplete && handleVote(val)}
+                    disabled={isComplete}
+                    style={isComplete ? { opacity: 0.4, cursor: 'default' } : undefined}
                     aria-label={`Vote ${val}`}
                     aria-pressed={selectedCard === val}
                   >
@@ -655,11 +688,13 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 ))}
               </CardDeck>
 
-              <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
-                <Btn primary onClick={handleReveal} style={{ padding: '16px 40px', fontSize: 14 }} aria-label="Reveal all votes">
-                  reveal votes →
-                </Btn>
-              </div>
+              {!isComplete && (
+                <div style={{ flex: 1, display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+                  <Btn primary onClick={handleReveal} style={{ padding: '16px 40px', fontSize: 14 }} aria-label="Reveal all votes">
+                    reveal votes →
+                  </Btn>
+                </div>
+              )}
             </>
           ) : (
             <ConsensusBox>
@@ -709,6 +744,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 </div>
               )}
 
+              {!isComplete && (
               <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div>
                   <Label style={{ display: 'block', marginBottom: 8 }}>Not aligned?</Label>
@@ -752,6 +788,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   </div>
                 </div>
               </div>
+              )}
             </ConsensusBox>
           )}
         </ContentPanel>

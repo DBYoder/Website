@@ -120,12 +120,25 @@ function sanitizeStory(raw) {
 const RETRO_COLUMNS = ['wentWell', 'toImprove', 'actionItems'];
 const RETRO_VOTE_LIMIT = 3;
 const WBS_NODE_TYPES = ['epic', 'feature', 'story'];
+// A poker participant kept this long after their last socket drops, so a
+// refresh or brief network blip doesn't evict them or duplicate their slot.
+const POKER_GRACE_MS = 10000;
 
 const sessions = { poker: pokerSessions, retro: retroSessions, wbs: wbsSessions, backlog: backlogSessions };
 
 // Maps socket.id → room for cleanup
 const socketRetroRoom = {};
 const socketWBSRoom   = {};
+// Poker participants are keyed by username (not socket.id) so multiple tabs
+// or a reconnect map to one slot. These track each socket's room+name and any
+// pending grace-period removals.
+const socketPokerRoom = {};
+const socketPokerUser = {};
+const pokerRemovalTimers = {};
+
+// Active = has at least one live socket (not mid-grace-period).
+const activePokerParticipants = (s) =>
+  Object.values(s.participants).filter(p => (p.sockets || []).length > 0);
 
 io.on('connection', (socket) => {
   console.log('User connected:', socket.id);
@@ -134,13 +147,31 @@ io.on('connection', (socket) => {
   socket.on('poker:join', ({ roomId, username }, ack) => {
     socket.join(`poker:${roomId}`);
     const existed = !!sessions.poker[roomId];
-    if (typeof ack === 'function') ack({ existed });
     if (!existed) {
-      sessions.poker[roomId] = { participants: {}, gameState: 'voting', currentStory: null, backlog: [] };
+      sessions.poker[roomId] = { participants: {}, gameState: 'voting', currentStory: null, backlog: [], status: 'active' };
     }
-    sessions.poker[roomId].participants[socket.id] = { username, vote: null, voted: false };
-    touch(sessions.poker[roomId]);
-    io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
+    const s = sessions.poker[roomId];
+    const name = (typeof username === 'string' && username.trim()) ? username.trim() : 'anon';
+    socketPokerRoom[socket.id] = roomId;
+    socketPokerUser[socket.id] = name;
+
+    // Duplicate-name: another live socket (a different person/tab) holds this name.
+    const existing = s.participants[name];
+    const nameTaken = !!(existing && (existing.sockets || []).some(id => id !== socket.id && io.sockets.sockets.has(id)));
+    if (typeof ack === 'function') ack({ existed, nameTaken });
+
+    // Cancel a pending grace-period removal — this is a reconnect.
+    const key = `${roomId}::${name}`;
+    if (pokerRemovalTimers[key]) { clearTimeout(pokerRemovalTimers[key]); delete pokerRemovalTimers[key]; }
+
+    if (existing) {
+      existing.sockets = existing.sockets || [];
+      if (!existing.sockets.includes(socket.id)) existing.sockets.push(socket.id);
+    } else {
+      s.participants[name] = { username: name, vote: null, voted: false, sockets: [socket.id] };
+    }
+    touch(s);
+    io.to(`poker:${roomId}`).emit('poker:state', s);
     saveData('poker.json', sessions.poker);
   });
 
@@ -199,16 +230,25 @@ io.on('connection', (socket) => {
 
   socket.on('poker:vote', ({ roomId, vote }) => {
     const s = sessions.poker[roomId];
-    if (s && s.participants[socket.id]) {
-      s.participants[socket.id].vote = vote;
-      s.participants[socket.id].voted = true;
-      // Auto-reveal once the last participant has voted
-      const everyone = Object.values(s.participants);
-      if (everyone.length > 0 && everyone.every(p => p.voted)) {
-        s.gameState = 'revealed';
-      }
-      io.to(`poker:${roomId}`).emit('poker:state', s);
+    const name = socketPokerUser[socket.id];
+    if (!s || s.status === 'complete' || !name || !s.participants[name]) return;
+    s.participants[name].vote = vote;
+    s.participants[name].voted = true;
+    // Auto-reveal once every currently-connected participant has voted.
+    const active = activePokerParticipants(s);
+    if (active.length > 0 && active.every(p => p.voted)) {
+      s.gameState = 'revealed';
     }
+    io.to(`poker:${roomId}`).emit('poker:state', s);
+  });
+
+  socket.on('poker:setStatus', ({ roomId, status }) => {
+    const s = sessions.poker[roomId];
+    if (!s || (status !== 'active' && status !== 'complete')) return;
+    s.status = status;
+    touch(s);
+    io.to(`poker:${roomId}`).emit('poker:state', s);
+    saveData('poker.json', sessions.poker);
   });
 
   socket.on('poker:reveal', (roomId) => {
@@ -250,16 +290,26 @@ io.on('connection', (socket) => {
     if (!sessions.retro[roomId]) {
       sessions.retro[roomId] = {
         columns: { wentWell: [], toImprove: [], actionItems: [] },
-        timer: { isRunning: false, durationSeconds: 0, startedAt: null }
+        timer: { isRunning: false, durationSeconds: 0, startedAt: null },
+        status: 'active'
       };
     }
     touch(sessions.retro[roomId]);
     io.to(`retro:${roomId}`).emit('retro:state', sessions.retro[roomId]);
   });
 
+  socket.on('retro:setStatus', ({ roomId, status }) => {
+    const s = sessions.retro[roomId];
+    if (!s || (status !== 'active' && status !== 'complete')) return;
+    s.status = status;
+    touch(s);
+    io.to(`retro:${roomId}`).emit('retro:state', s);
+    saveData('retro.json', sessions.retro);
+  });
+
   socket.on('retro:addCard', ({ roomId, colKey, text, username }) => {
     const s = sessions.retro[roomId];
-    if (!s || !RETRO_COLUMNS.includes(colKey) || typeof text !== 'string' || !text.trim()) return;
+    if (!s || s.status === 'complete' || !RETRO_COLUMNS.includes(colKey) || typeof text !== 'string' || !text.trim()) return;
     s.columns[colKey].push({ text, votes: 0, voters: [], owner: username, id: randomUUID() });
     touch(s);
     io.to(`retro:${roomId}`).emit('retro:state', s);
@@ -271,7 +321,7 @@ io.on('connection', (socket) => {
   // before voter tracking keep their anonymous baseline count.
   socket.on('retro:vote', ({ roomId, colKey, cardId, username }) => {
     const s = sessions.retro[roomId];
-    if (!s || !RETRO_COLUMNS.includes(colKey)) return;
+    if (!s || s.status === 'complete' || !RETRO_COLUMNS.includes(colKey)) return;
     if (typeof username !== 'string' || !username) return;
     const card = s.columns[colKey].find(c => c.id === cardId);
     if (!card) return;
@@ -510,11 +560,34 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    // Poker: remove participant but keep session alive
-    for (const roomId in sessions.poker) {
-      if (sessions.poker[roomId].participants[socket.id]) {
-        delete sessions.poker[roomId].participants[socket.id];
-        io.to(`poker:${roomId}`).emit('poker:state', sessions.poker[roomId]);
+    // Poker: drop this socket from its username slot; only evict the
+    // participant after a grace period with no reconnect (refresh-safe).
+    const pRoom = socketPokerRoom[socket.id];
+    const pName = socketPokerUser[socket.id];
+    delete socketPokerRoom[socket.id];
+    delete socketPokerUser[socket.id];
+    const pSession = pRoom && sessions.poker[pRoom];
+    const participant = pSession && pSession.participants[pName];
+    if (participant) {
+      participant.sockets = (participant.sockets || []).filter(id => id !== socket.id);
+      if (participant.sockets.length === 0) {
+        const key = `${pRoom}::${pName}`;
+        if (pokerRemovalTimers[key]) clearTimeout(pokerRemovalTimers[key]);
+        pokerRemovalTimers[key] = setTimeout(() => {
+          delete pokerRemovalTimers[key];
+          const s2 = sessions.poker[pRoom];
+          const p2 = s2 && s2.participants[pName];
+          if (p2 && (p2.sockets || []).length === 0) {
+            delete s2.participants[pName];
+            // Voting may now be unanimous among those who remain.
+            const active = activePokerParticipants(s2);
+            if (s2.gameState === 'voting' && active.length > 0 && active.every(p => p.voted)) {
+              s2.gameState = 'revealed';
+            }
+            io.to(`poker:${pRoom}`).emit('poker:state', s2);
+            saveData('poker.json', sessions.poker);
+          }
+        }, POKER_GRACE_MS);
       }
     }
 

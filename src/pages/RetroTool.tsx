@@ -6,6 +6,7 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
 import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
+import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom } from '../lib/session';
 
 // --- Types ---
 interface RetroCard {
@@ -250,6 +251,20 @@ const ErrorText = styled.span`
   letter-spacing: 0.1em;
 `;
 
+const RecentChip = styled.button`
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.secondary};
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  cursor: pointer;
+  &:hover { border-color: ${COLORS.magenta}; color: ${COLORS.magenta}; }
+`;
+
 const COL_CONFIG: Record<ColKey, { title: string; color: string }> = {
   wentWell: { title: 'Went Well', color: COLORS.lime },
   toImprove: { title: 'To Improve', color: COLORS.yellow },
@@ -265,7 +280,7 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const wasCountingDownRef = useRef(false);
 
   const [roomCode, setRoomCode] = useState('');
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(getSavedUsername);
   const [isJoined, setIsJoined] = useState(false);
   const [session, setSession] = useState<RetroSession | null>(null);
   const [timeLeft, setTimeLeft] = useState(0);
@@ -342,8 +357,10 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     return () => clearInterval(id);
   }, [timeLeft]);
 
-  const handleJoin = () => {
-    const trimRoom = roomCode.trim().toUpperCase();
+  const recentRooms = getRecentRooms('retro');
+
+  const handleJoin = (code?: string) => {
+    const trimRoom = (code ?? roomCode).trim().toUpperCase();
     const trimUser = username.trim();
     if (!trimUser) { setJoinError('Username is required'); return; }
     if (!trimRoom) { setJoinError('Room code is required'); return; }
@@ -352,6 +369,8 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     socketRef.current?.emit('retro:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
       if (!res?.existed) setRoomNotice('room not found — started a new board');
     });
+    saveUsername(trimUser);
+    addRecentRoom('retro', trimRoom);
     setIsJoined(true);
   };
 
@@ -362,6 +381,8 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     setRoomCode(newCode);
     socketRef.current?.emit('retro:join', { roomId: newCode, username: trimUser });
+    saveUsername(trimUser);
+    addRecentRoom('retro', newCode);
     setIsJoined(true);
   };
 
@@ -498,12 +519,22 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 aria-label="Room code"
               />
               <Btn
-                onClick={handleJoin}
+                onClick={() => handleJoin()}
                 style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}
                 aria-label="Join existing session"
               >
                 Join Session →
               </Btn>
+              {recentRooms.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>recent:</span>
+                  {recentRooms.map(code => (
+                    <RecentChip key={code} onClick={() => handleJoin(code)} aria-label={`Rejoin room ${code}`}>
+                      {code}
+                    </RecentChip>
+                  ))}
+                </div>
+              )}
             </div>
 
             {joinError && <ErrorText role="alert">{joinError}</ErrorText>}

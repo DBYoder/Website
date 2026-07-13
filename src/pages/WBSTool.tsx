@@ -6,6 +6,7 @@ import { COLORS } from '../GlobalStyles';
 import ToolShell from '../components/ToolShell';
 import { Tag, Btn, Label, Box } from '../components/Core';
 import { Story, loadBacklog, saveBacklog, mergeStoriesById } from '../lib/story';
+import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom } from '../lib/session';
 
 // --- Types ---
 interface WBSNodeData {
@@ -262,6 +263,20 @@ const ErrorText = styled.span`
   letter-spacing: 0.1em;
 `;
 
+const RecentChip = styled.button`
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.secondary};
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  cursor: pointer;
+  &:hover { border-color: ${COLORS.lime}; color: ${COLORS.lime}; }
+`;
+
 // --- Tree interaction state passed to recursive nodes ---
 interface TreeActions {
   username: string;
@@ -308,7 +323,9 @@ const TreeNode: React.FC<{
 
   const color = NODE_COLOR[node.type];
   const childType = CHILD_TYPE[node.type];
-  const isOwner = node.createdBy === a.username;
+  // Collaborative: any participant can edit while the session is active.
+  // createdBy is kept only as an informational "added by" label.
+  const canEdit = a.sessionStatus === 'active';
   const isEditing = a.editingNodeId === nodeId;
   const isDeleting = a.deletingNodeId === nodeId;
   const isAddingHere = a.addingChildOf === nodeId;
@@ -349,14 +366,14 @@ const TreeNode: React.FC<{
           />
         ) : (
           <NodeTitle
-            clickable={isOwner && active}
+            clickable={canEdit}
             onClick={() => {
-              if (isOwner && active) {
+              if (canEdit) {
                 a.setEditingNodeId(nodeId);
                 a.setEditingTitle(node.title);
               }
             }}
-            title={isOwner && active ? 'Click to rename' : undefined}
+            title={canEdit ? 'Click to rename' : undefined}
           >
             {node.title}
           </NodeTitle>
@@ -380,7 +397,7 @@ const TreeNode: React.FC<{
               </>
             ) : (
               <>
-                {node.type === 'story' && isOwner && (
+                {node.type === 'story' && (
                   <SmallBtn
                     accent={COLORS.lime}
                     onClick={() => {
@@ -400,7 +417,7 @@ const TreeNode: React.FC<{
                     {isShowingDetails ? 'close' : 'details'}
                   </SmallBtn>
                 )}
-                {isOwner && childType && !isAddingHere && (
+                {childType && !isAddingHere && (
                   <SmallBtn
                     accent={NODE_COLOR[childType]}
                     onClick={() => { a.setAddingChildOf(nodeId); a.setAddingTitle(''); }}
@@ -409,11 +426,9 @@ const TreeNode: React.FC<{
                     + {childType}
                   </SmallBtn>
                 )}
-                {isOwner && (
-                  <SmallBtn danger onClick={() => a.setDeletingNodeId(nodeId)} aria-label={`Delete ${node.type}`}>
-                    ✕
-                  </SmallBtn>
-                )}
+                <SmallBtn danger onClick={() => a.setDeletingNodeId(nodeId)} aria-label={`Delete ${node.type}`}>
+                  ✕
+                </SmallBtn>
               </>
             )}
           </ActionGroup>
@@ -521,7 +536,7 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const roomCodeRef = useRef('');
 
   const [roomCode, setRoomCode] = useState('');
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(getSavedUsername);
   const [isJoined, setIsJoined] = useState(false);
   const [session, setSession] = useState<WBSSession | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>('connecting');
@@ -570,8 +585,8 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     }
   }, [isJoined, roomCode]);
 
-  const handleJoin = () => {
-    const trimRoom = roomCode.trim().toUpperCase();
+  const handleJoin = (code?: string) => {
+    const trimRoom = (code ?? roomCode).trim().toUpperCase();
     const trimUser = username.trim();
     if (!trimUser) { setJoinError('Username is required'); return; }
     if (!trimRoom) { setJoinError('Room code is required'); return; }
@@ -580,6 +595,8 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     socketRef.current?.emit('wbs:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
       if (!res?.existed) setRoomNotice('room not found — started a new session');
     });
+    saveUsername(trimUser);
+    addRecentRoom('wbs', trimRoom);
     setIsJoined(true);
   };
 
@@ -590,8 +607,12 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const code = Math.random().toString(36).substring(2, 8).toUpperCase();
     setRoomCode(code);
     socketRef.current?.emit('wbs:join', { roomId: code, username: trimUser });
+    saveUsername(trimUser);
+    addRecentRoom('wbs', code);
     setIsJoined(true);
   };
+
+  const recentRooms = getRecentRooms('wbs');
 
   const submitAdd = () => {
     const title = addingTitle.trim();
@@ -733,9 +754,19 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 onKeyDown={e => e.key === 'Enter' && handleJoin()}
                 aria-label="Room code to resume"
               />
-              <Btn onClick={handleJoin} style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}>
+              <Btn onClick={() => handleJoin()} style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}>
                 Resume Session →
               </Btn>
+              {recentRooms.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>recent:</span>
+                  {recentRooms.map(code => (
+                    <RecentChip key={code} onClick={() => handleJoin(code)} aria-label={`Resume room ${code}`}>
+                      {code}
+                    </RecentChip>
+                  ))}
+                </div>
+              )}
             </div>
             {joinError && <ErrorText role="alert">{joinError}</ErrorText>}
             {connectionStatus === 'error' && <ErrorText role="alert">Cannot connect to server.</ErrorText>}

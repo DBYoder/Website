@@ -8,6 +8,7 @@ import { Label, Tag, Box, Btn, CornerBracket } from '../components/Core';
 import ExportMenu from '../components/ExportMenu';
 import { Story, syncPointsToBacklog } from '../lib/story';
 import { parseStoriesFromCSV } from '../lib/storyCsv';
+import { getSavedUsername, saveUsername, getRecentRooms, addRecentRoom } from '../lib/session';
 
 // --- Types ---
 interface PokerParticipant {
@@ -195,6 +196,20 @@ const ErrorText = styled.span`
   letter-spacing: 0.1em;
 `;
 
+const RecentChip = styled.button`
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid ${COLORS.border};
+  color: ${COLORS.secondary};
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  padding: 4px 10px;
+  cursor: pointer;
+  &:hover { border-color: ${COLORS.cyan}; color: ${COLORS.cyan}; }
+`;
+
 const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const location = useLocation();
   const socketRef = useRef<Socket | null>(null);
@@ -202,7 +217,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [roomCode, setRoomCode] = useState('');
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(getSavedUsername);
   const [isJoined, setIsJoined] = useState(false);
   const [session, setSession] = useState<PokerSession | null>(null);
   const [selectedCard, setSelectedCard] = useState<string | null>(null);
@@ -230,10 +245,13 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
       const room = urlRoom.toUpperCase();
       setRoomCode(room);
       setUsername(urlUser);
+      saveUsername(urlUser);
+      addRecentRoom('poker', room);
       socket.emit('poker:join', { roomId: room, username: urlUser });
       setIsJoined(true);
       const url = new URL(window.location.href);
       url.searchParams.set('room', room);
+      url.searchParams.set('user', urlUser);
       window.history.replaceState(null, '', url.toString());
     }
 
@@ -254,14 +272,26 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     prevGameStateRef.current = gameState;
   }, [gameState]);
 
-  const updateRoomUrl = (room: string) => {
+  const recentRooms = getRecentRooms('poker');
+
+  // Include the username in the URL so a refresh re-joins automatically
+  // (the mount effect auto-joins only when both room and user are present).
+  const updateRoomUrl = (room: string, user: string) => {
     const url = new URL(window.location.href);
     url.searchParams.set('room', room);
+    url.searchParams.set('user', user);
     window.history.replaceState(null, '', url.toString());
   };
 
-  const handleJoin = () => {
-    const trimRoom = roomCode.trim().toUpperCase();
+  const enterRoom = (room: string, user: string) => {
+    saveUsername(user);
+    addRecentRoom('poker', room);
+    setIsJoined(true);
+    updateRoomUrl(room, user);
+  };
+
+  const handleJoin = (code?: string) => {
+    const trimRoom = (code ?? roomCode).trim().toUpperCase();
     const trimUser = username.trim();
     if (!trimUser) { setJoinError('Username is required'); return; }
     if (!trimRoom || !/^[A-Z0-9]+$/.test(trimRoom)) { setJoinError('Enter a valid room code'); return; }
@@ -270,8 +300,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     socketRef.current?.emit('poker:join', { roomId: trimRoom, username: trimUser }, (res: { existed: boolean }) => {
       if (!res?.existed) setRoomNotice('room not found — started a new session');
     });
-    setIsJoined(true);
-    updateRoomUrl(trimRoom);
+    enterRoom(trimRoom, trimUser);
   };
 
   const handleStartNew = () => {
@@ -281,8 +310,7 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     const newCode = Math.random().toString(36).substring(2, 8).toUpperCase();
     setRoomCode(newCode);
     socketRef.current?.emit('poker:join', { roomId: newCode, username: trimUser });
-    setIsJoined(true);
-    updateRoomUrl(newCode);
+    enterRoom(newCode, trimUser);
   };
 
   const handleVote = (val: string) => {
@@ -365,12 +393,22 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                 aria-label="Room code"
               />
               <Btn
-                onClick={handleJoin}
+                onClick={() => handleJoin()}
                 style={{ width: '100%', justifyContent: 'center', fontSize: 14, padding: '14px' }}
                 aria-label="Join existing session"
               >
                 Join Session →
               </Btn>
+              {recentRooms.length > 0 && (
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+                  <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>recent:</span>
+                  {recentRooms.map(code => (
+                    <RecentChip key={code} onClick={() => handleJoin(code)} aria-label={`Rejoin room ${code}`}>
+                      {code}
+                    </RecentChip>
+                  ))}
+                </div>
+              )}
             </div>
 
             {joinError && <ErrorText role="alert">{joinError}</ErrorText>}
@@ -407,14 +445,25 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
 
   const voteCounts: Record<string, number> = {};
   numericVotes.forEach(v => { voteCounts[v] = (voteCounts[v] || 0) + 1; });
-  let consensus = '-';
-  let maxCount = 0;
-  for (const v in voteCounts) {
-    if (voteCounts[v] > maxCount) {
-      maxCount = voteCounts[v];
-      consensus = v;
-    }
-  }
+  const maxCount = numericVotes.length ? Math.max(...Object.values(voteCounts)) : 0;
+  // Deterministic tiebreak: when two values are equally common, take the
+  // higher one (estimate conservatively rather than picking arbitrarily).
+  const consensus = numericVotes.length
+    ? String(Object.keys(voteCounts)
+        .filter(v => voteCounts[v] === maxCount)
+        .map(Number)
+        .sort((a, b) => b - a)[0])
+    : '-';
+  const minVote = numericVotes.length ? Math.min(...numericVotes) : 0;
+  const maxVote = numericVotes.length ? Math.max(...numericVotes) : 0;
+  const distinctVotes = Object.keys(voteCounts).length;
+  const agreed = numericVotes.length > 0 && distinctVotes === 1;
+  const spread = minVote === maxVote ? String(minVote) : `${minVote}–${maxVote}`;
+  // Sorted distribution for the results histogram
+  const distribution = Object.keys(voteCounts)
+    .map(Number)
+    .sort((a, b) => a - b)
+    .map(v => ({ value: v, count: voteCounts[v] }));
 
   return (
     <ToolShell toolName="Planning Poker" toolColor={COLORS.cyan} activeNav="poker" onBack={onBack}>
@@ -599,7 +648,12 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
           ) : (
             <ConsensusBox>
               <CornerBracket color={COLORS.cyan} style={{ top: 0, left: 0 }} size={16} />
-              <Label color={COLORS.cyan} size={14}>voting results</Label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <Label color={COLORS.cyan} size={14}>voting results</Label>
+                <Tag color={agreed ? COLORS.lime : COLORS.yellow} role="status">
+                  {agreed ? '✓ team aligned' : `spread ${spread} — discuss`}
+                </Tag>
+              </div>
 
               <StatsGrid>
                 <StatItem>
@@ -611,10 +665,33 @@ const PokerTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   <div className="wf-retro" style={{ fontSize: 32, color: COLORS.cyan }} aria-label={`Consensus: ${consensus}`}>{consensus}</div>
                 </StatItem>
                 <StatItem>
-                  <Label style={{ display: 'block', marginBottom: 8 }}>Voted</Label>
-                  <div className="wf-retro" style={{ fontSize: 32, color: COLORS.primary }} aria-label={`${numericVotes.length} numeric votes`}>{numericVotes.length}</div>
+                  <Label style={{ display: 'block', marginBottom: 8 }}>Spread</Label>
+                  <div className="wf-retro" style={{ fontSize: 32, color: agreed ? COLORS.lime : COLORS.yellow }} aria-label={`Spread: ${spread}`}>{spread}</div>
                 </StatItem>
               </StatsGrid>
+
+              {distribution.length > 0 && (
+                <div aria-label="Vote distribution" style={{ display: 'flex', alignItems: 'flex-end', gap: 12, padding: '4px 4px 0' }}>
+                  {distribution.map(({ value, count }) => {
+                    const isConsensus = String(value) === consensus;
+                    return (
+                      <div key={value} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6 }}>
+                        <span className="wf-mono" style={{ fontSize: 11, color: isConsensus ? COLORS.cyan : COLORS.muted }}>{count}×</span>
+                        <div
+                          style={{
+                            width: '100%',
+                            height: 8 + (count / maxCount) * 56,
+                            background: isConsensus ? COLORS.cyan : COLORS.border,
+                            boxShadow: isConsensus ? `0 0 8px ${COLORS.cyan}` : 'none',
+                          }}
+                          aria-label={`${count} vote${count !== 1 ? 's' : ''} for ${value}`}
+                        />
+                        <span className="wf-retro" style={{ fontSize: 18, color: isConsensus ? COLORS.cyan : COLORS.secondary }}>{value}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
 
               <div style={{ display: 'flex', gap: 24, alignItems: 'flex-end', flexWrap: 'wrap' }}>
                 <div>

@@ -324,11 +324,15 @@ io.on('connection', (socket) => {
     saveData('wbs.json', sessions.wbs);
   });
 
-  socket.on('wbs:renameNode', ({ roomId, nodeId, title, username }) => {
+  // WBS editing is collaborative: any participant in an active session can
+  // rename, add to, or edit any node — the breakdown is a shared artifact,
+  // not per-author. createdBy is retained only as an informational label.
+  socket.on('wbs:renameNode', ({ roomId, nodeId, title }) => {
     const s = sessions.wbs[roomId];
     if (!s || s.status === 'complete') return;
+    if (typeof title !== 'string' || !title.trim()) return;
     const node = s.nodes[nodeId];
-    if (node && node.createdBy === username) {
+    if (node) {
       node.title = title;
       touch(s);
       io.to(`wbs:${roomId}`).emit('wbs:state', s);
@@ -336,11 +340,11 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on('wbs:deleteNode', ({ roomId, nodeId, username }) => {
+  socket.on('wbs:deleteNode', ({ roomId, nodeId }) => {
     const s = sessions.wbs[roomId];
     if (!s || s.status === 'complete') return;
     const node = s.nodes[nodeId];
-    if (!node || node.createdBy !== username) return;
+    if (!node) return;
 
     const toDelete = [];
     const collect = (id) => {
@@ -362,11 +366,11 @@ io.on('connection', (socket) => {
     saveData('wbs.json', sessions.wbs);
   });
 
-  socket.on('wbs:updateStoryDetails', ({ roomId, nodeId, asA, iWant, soThat, criteria, username }) => {
+  socket.on('wbs:updateStoryDetails', ({ roomId, nodeId, asA, iWant, soThat, criteria }) => {
     const s = sessions.wbs[roomId];
     if (!s || s.status === 'complete') return;
     const node = s.nodes[nodeId];
-    if (node && node.type === 'story' && node.createdBy === username) {
+    if (node && node.type === 'story') {
       node.asA = typeof asA === 'string' ? asA : '';
       node.iWant = typeof iWant === 'string' ? iWant : '';
       node.soThat = typeof soThat === 'string' ? soThat : '';

@@ -30,6 +30,7 @@ interface RetroTimer {
 interface RetroSession {
   columns: Record<ColKey, RetroCard[]>;
   timer: RetroTimer;
+  status?: 'active' | 'complete';
 }
 
 // --- Styles ---
@@ -265,6 +266,24 @@ const RecentChip = styled.button`
   &:hover { border-color: ${COLORS.magenta}; color: ${COLORS.magenta}; }
 `;
 
+const ExportItem = styled.button`
+  appearance: none;
+  -webkit-appearance: none;
+  background: none;
+  border: none;
+  border-bottom: 1px solid ${COLORS.border};
+  padding: 10px 14px;
+  text-align: left;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: ${COLORS.secondary};
+  cursor: pointer;
+  &:last-child { border-bottom: none; }
+  &:hover { background: ${COLORS.elevated}; color: ${COLORS.primary}; }
+`;
+
 const COL_CONFIG: Record<ColKey, { title: string; color: string }> = {
   wentWell: { title: 'Went Well', color: COLORS.lime },
   toImprove: { title: 'To Improve', color: COLORS.yellow },
@@ -298,6 +317,8 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
   const [timerMins, setTimerMins] = useState('5');
   const [timerError, setTimerError] = useState('');
   const [roomNotice, setRoomNotice] = useState('');
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const [confirmComplete, setConfirmComplete] = useState(false);
 
   // Sync roomCode to ref so effects don't need it as a dependency
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
@@ -403,6 +424,11 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     ? (Object.values(session.columns) as RetroCard[][]).reduce(
         (n, cards) => n + cards.filter(c => c.voters?.includes(username)).length, 0)
     : 0;
+  const isComplete = session?.status === 'complete';
+  const toggleComplete = () => {
+    socketRef.current?.emit('retro:setStatus', { roomId: roomCodeRef.current, status: isComplete ? 'active' : 'complete' });
+    setConfirmComplete(false);
+  };
 
   const handleDeleteCard = (cardId: string) => {
     socketRef.current?.emit('retro:deleteCard', { roomId: roomCodeRef.current, cardId, username });
@@ -425,34 +451,52 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     setTimeLeft(0);
   };
 
-  const handleExport = () => {
-    if (!session) return;
-    const date = new Date().toLocaleDateString();
-    const formatCards = (cards: RetroCard[]) =>
-      cards.length > 0
-        ? cards.map(c => `  • ${c.text} (by ${c.owner}, ${c.votes} vote${c.votes !== 1 ? 's' : ''})`).join('\n')
-        : '  (none)';
-    const content = [
-      'RETROSPECTIVE EXPORT',
-      `Date: ${date}  |  Room: ${roomCodeRef.current}`,
-      '',
-      '=== WENT WELL ===',
-      formatCards(session.columns.wentWell),
-      '',
-      '=== TO IMPROVE ===',
-      formatCards(session.columns.toImprove),
-      '',
-      '=== ACTION ITEMS ===',
-      formatCards(session.columns.actionItems),
-    ].join('\n');
-
-    const blob = new Blob([content], { type: 'text/plain' });
+  const download = (ext: string, mime: string, content: string) => {
+    const blob = new Blob([content], { type: mime });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `retro-${roomCodeRef.current}-${Date.now()}.txt`;
+    a.download = `retro-${roomCodeRef.current}-${new Date().toISOString().slice(0, 10)}.${ext}`;
     a.click();
     URL.revokeObjectURL(url);
+    setShowExportMenu(false);
+  };
+
+  // Cards sorted by votes (desc) so the highest-priority items lead — the
+  // ordering a team actually acts on after dot-voting.
+  const byVotes = (cards: RetroCard[]) => [...cards].sort((a, b) => b.votes - a.votes);
+
+  const exportMarkdown = () => {
+    if (!session) return;
+    const section = (title: string, cards: RetroCard[]) => {
+      const lines = [`## ${title}`];
+      if (cards.length === 0) lines.push('', '_(none)_');
+      else byVotes(cards).forEach(c => lines.push(`- ${c.text}  \`▲ ${c.votes}\` — _${c.owner}_`));
+      return lines.join('\n');
+    };
+    const md = [
+      `# Retrospective — ${new Date().toISOString().slice(0, 10)}`,
+      `Room: ${roomCodeRef.current}`,
+      '',
+      section('Went Well', session.columns.wentWell),
+      '',
+      section('To Improve', session.columns.toImprove),
+      '',
+      section('Action Items', session.columns.actionItems),
+    ].join('\n');
+    download('md', 'text/markdown', md);
+  };
+
+  const exportCSV = () => {
+    if (!session) return;
+    const esc = (v: string) => /[",\n]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v;
+    const rows = [['column', 'text', 'votes', 'author'].join(',')];
+    (['wentWell', 'toImprove', 'actionItems'] as ColKey[]).forEach(key => {
+      byVotes(session.columns[key]).forEach(c => {
+        rows.push([COL_CONFIG[key].title, c.text, String(c.votes), c.owner].map(esc).join(','));
+      });
+    });
+    download('csv', 'text/csv', rows.join('\n'));
   };
 
   // Action items usually become backlog work: seed them into the shared
@@ -571,9 +615,12 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
         <Toolbar>
           <span className="wf-mono" style={{ fontSize: 13, color: COLORS.magenta }}>Room: {roomCode}</span>
           {roomNotice && <Tag color={COLORS.yellow} role="status">{roomNotice}</Tag>}
-          <Tag color={votesUsed >= VOTE_LIMIT ? COLORS.muted : COLORS.cyan} aria-label={`${VOTE_LIMIT - votesUsed} of ${VOTE_LIMIT} votes remaining`}>
-            votes {VOTE_LIMIT - votesUsed}/{VOTE_LIMIT}
-          </Tag>
+          {isComplete && <Tag color={COLORS.muted} role="status">complete — read only</Tag>}
+          {!isComplete && (
+            <Tag color={votesUsed >= VOTE_LIMIT ? COLORS.muted : COLORS.cyan} aria-label={`${VOTE_LIMIT - votesUsed} of ${VOTE_LIMIT} votes remaining`}>
+              votes {VOTE_LIMIT - votesUsed}/{VOTE_LIMIT}
+            </Tag>
+          )}
           <div style={{ flex: 1, height: 1, background: COLORS.border }} />
 
           {connectionStatus !== 'connected' && (
@@ -629,9 +676,28 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
               actions → backlog ({session.columns.actionItems.length})
             </Btn>
           )}
-          <Btn onClick={handleExport} style={{ padding: '8px 20px' }} aria-label="Export retro notes">
-            export ↓
-          </Btn>
+          <div style={{ position: 'relative' }}>
+            <Btn onClick={() => setShowExportMenu(v => !v)} style={{ padding: '8px 20px' }} aria-label="Export retro notes" aria-haspopup="menu" aria-expanded={showExportMenu}>
+              export ↓
+            </Btn>
+            {showExportMenu && (
+              <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 50, background: COLORS.surface, border: `1px solid ${COLORS.borderBright}`, display: 'flex', flexDirection: 'column', minWidth: 140 }}>
+                <ExportItem role="menuitem" onClick={exportMarkdown}>markdown</ExportItem>
+                <ExportItem role="menuitem" onClick={exportCSV}>csv</ExportItem>
+              </div>
+            )}
+          </div>
+          {confirmComplete ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span className="wf-mono" style={{ fontSize: 10, color: COLORS.muted }}>{isComplete ? 'reopen?' : 'mark complete?'}</span>
+              <Btn onClick={toggleComplete} style={{ padding: '6px 12px', fontSize: 11, borderColor: COLORS.magenta, color: COLORS.magenta }}>yes</Btn>
+              <Btn onClick={() => setConfirmComplete(false)} style={{ padding: '6px 12px', fontSize: 11 }}>no</Btn>
+            </div>
+          ) : (
+            <Btn onClick={() => setConfirmComplete(true)} style={{ padding: '8px 20px' }} aria-label={isComplete ? 'Reopen retro' : 'Mark retro complete'}>
+              {isComplete ? 'reopen' : 'complete'}
+            </Btn>
+          )}
         </Toolbar>
 
         <ColumnsGrid role="list" aria-label="Retrospective columns">
@@ -674,7 +740,7 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                               </VoteBtn>
                             )
                           )}
-                          {(() => {
+                          {!isComplete && (() => {
                             const mine = note.voters?.includes(username) ?? false;
                             return (
                               <VoteBtn
@@ -699,6 +765,7 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                   ))}
                 </CardList>
 
+                {!isComplete && (
                 <AddCardArea>
                   {inputCol === key ? (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -740,6 +807,7 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
                     </AddCardBtn>
                   )}
                 </AddCardArea>
+                )}
               </Column>
             );
           })}

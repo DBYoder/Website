@@ -496,9 +496,17 @@ io.on('connection', (socket) => {
 
   // Merge stories by id: existing ids update in place (only non-empty
   // incoming fields overwrite), new ids append — mirrors mergeStoriesById.
-  socket.on('backlog:upsert', ({ roomId, stories }) => {
+  // ack lets senders that navigate away (WBS export, retro actions) wait for
+  // the write to land before their socket disconnects, avoiding a dropped emit.
+  socket.on('backlog:upsert', ({ roomId, stories }, ack) => {
+    // Create the room if it doesn't exist yet, so a first-time export/actions
+    // send from a socket that never explicitly joined still persists.
+    if (typeof roomId === 'string' && roomId && !sessions.backlog[roomId]) {
+      sessions.backlog[roomId] = { stories: [], createdAt: Date.now() };
+      socket.join(`backlog:${roomId}`);
+    }
     const s = sessions.backlog[roomId];
-    if (!s || !Array.isArray(stories)) return;
+    if (!s || !Array.isArray(stories)) { if (typeof ack === 'function') ack({ ok: false }); return; }
     for (const raw of stories) {
       const story = sanitizeStory(raw);
       if (!story) continue;
@@ -516,6 +524,7 @@ io.on('connection', (socket) => {
     touch(s);
     emitBacklog(roomId);
     saveData('backlog.json', sessions.backlog);
+    if (typeof ack === 'function') ack({ ok: true });
   });
 
   // Full replace — used for reordering and inline edits where fields may clear.

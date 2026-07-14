@@ -232,10 +232,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
             <Box w={360} bg={COLORS.elevated} border={COLORS.border} style={{ padding: '24px 32px' }}>
               <Label color={COLORS.lime} style={{ display: 'block', marginBottom: 16, fontSize: 13 }}>available tools</Label>
               {[
+                { cmd: 'wbs', desc: 'work breakdown' },
+                { cmd: 'stories', desc: 'story generator' },
                 { cmd: 'poker', desc: 'planning poker' },
                 { cmd: 'retro', desc: 'retro board' },
-                { cmd: 'stories', desc: 'story generator' },
-                { cmd: 'wbs', desc: 'work breakdown' },
               ].map(({ cmd, desc }) => (
                 <div key={cmd} style={{ marginBottom: 10 }}>
                   <span className="wf-mono" style={{ fontSize: 13, color: COLORS.cyan }}>{'>'} </span>
@@ -252,11 +252,13 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
         </HeroSection>
 
         <ToolGrid>
+          {/* Ordered left-to-right in the sequence a team uses them:
+              break down work -> write stories -> estimate -> retro. */}
           {[
+            { id: 'wbs', name: 'Work Breakdown', tag: 'live', tagColor: COLORS.lime, desc: 'collaborative epic → feature → story decomposition', icon: '◩', color: COLORS.lime },
+            { id: 'stories', name: 'Story Generator', tag: 'live', tagColor: COLORS.lime, desc: 'user story templates and backlog builder', icon: '◧', color: COLORS.purple },
             { id: 'poker', name: 'Planning Poker', tag: 'live', tagColor: COLORS.lime, desc: 'async + realtime card voting for sprint estimates', icon: '◈', color: COLORS.cyan },
             { id: 'retro', name: 'Retro Board', tag: 'live', tagColor: COLORS.lime, desc: 'structured sprint retrospective with columns + voting', icon: '◫', color: COLORS.magenta },
-            { id: 'stories', name: 'Story Generator', tag: 'live', tagColor: COLORS.lime, desc: 'user story templates and backlog builder', icon: '◧', color: COLORS.purple },
-            { id: 'wbs', name: 'Work Breakdown', tag: 'live', tagColor: COLORS.lime, desc: 'collaborative epic → feature → story decomposition', icon: '◩', color: COLORS.lime },
           ].map(({ id, name, tag, tagColor, desc, icon, color }) => (
             <ToolCard key={name} accent={color}>
               <CornerBracket color={color} style={{ top: 0, left: 0 }} size={12} />

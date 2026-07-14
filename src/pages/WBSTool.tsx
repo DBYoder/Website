@@ -715,8 +715,17 @@ const WBSTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     // exported stories reach the whole team; otherwise write local.
     const shared = getActiveSharedBacklog();
     if (shared) {
-      socketRef.current?.emit('backlog:upsert', { roomId: shared, stories });
-      navigate(`/stories?backlog=${shared}`);
+      // Wait for the server to ack the write before navigating — navigating
+      // unmounts this tool and disconnects the socket, which would otherwise
+      // drop the not-yet-flushed emit. Fall back after a short timeout.
+      const go = () => navigate(`/stories?backlog=${shared}`);
+      let done = false;
+      const finish = () => { if (!done) { done = true; go(); } };
+      const timer = setTimeout(finish, 2000);
+      socketRef.current?.emit('backlog:upsert', { roomId: shared, stories }, () => {
+        clearTimeout(timer);
+        finish();
+      });
     } else {
       saveBacklog(mergeStoriesById(loadBacklog(), stories));
       navigate('/stories');

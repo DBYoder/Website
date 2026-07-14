@@ -520,8 +520,16 @@ const RetroTool: React.FC<{ onBack: () => void }> = ({ onBack }) => {
     // action items reach the whole team; otherwise write the local backlog.
     const shared = getActiveSharedBacklog();
     if (shared) {
-      socketRef.current?.emit('backlog:upsert', { roomId: shared, stories });
-      navigate(`/stories?backlog=${shared}`);
+      // Wait for the server ack before navigating, else the socket disconnects
+      // on unmount and the emit can be dropped. Fall back after a timeout.
+      const go = () => navigate(`/stories?backlog=${shared}`);
+      let done = false;
+      const finish = () => { if (!done) { done = true; go(); } };
+      const timer = setTimeout(finish, 2000);
+      socketRef.current?.emit('backlog:upsert', { roomId: shared, stories }, () => {
+        clearTimeout(timer);
+        finish();
+      });
     } else {
       saveBacklog(mergeStoriesById(loadBacklog(), stories));
       navigate('/stories');

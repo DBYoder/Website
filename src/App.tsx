@@ -2,6 +2,7 @@ import React from 'react';
 import styled from 'styled-components';
 import { BrowserRouter as Router, Routes, Route, useNavigate } from 'react-router-dom';
 import { GlobalStyles } from './GlobalStyles';
+import { useRouteSEO } from './lib/seo';
 import LandingPage from './pages/LandingPage';
 import PokerTool from './pages/PokerTool';
 import RetroTool from './pages/RetroTool';
@@ -23,6 +24,7 @@ const AppContainer = styled.div`
 
 const NavigationWrapper: React.FC = () => {
   const navigate = useNavigate();
+  useRouteSEO();
 
   return (
     <Routes>

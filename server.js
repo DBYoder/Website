@@ -614,6 +614,30 @@ io.on('connection', (socket) => {
   });
 });
 
+// SEO crawl files served explicitly (before the SPA catch-all) with correct
+// content types. express.static above serves the built copies, but these
+// guarantee the routes never fall through to index.html — which is what makes
+// Google report "your sitemap appears to be an HTML page" — even if the static
+// build output is ever missing or a rewrite changes.
+const SITE_URL = 'https://dbagiletools.com';
+const SITE_ROUTES = ['/', '/wbs', '/stories', '/poker', '/retro'];
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').send(`User-agent: *\nAllow: /\n\nSitemap: ${SITE_URL}/sitemap.xml\n`);
+});
+
+app.get('/sitemap.xml', (req, res) => {
+  const urls = SITE_ROUTES.map(p => {
+    const loc = `${SITE_URL}${p === '/' ? '/' : p}`;
+    const priority = p === '/' ? '1.0' : '0.8';
+    const freq = p === '/' ? 'weekly' : 'monthly';
+    return `  <url>\n    <loc>${loc}</loc>\n    <changefreq>${freq}</changefreq>\n    <priority>${priority}</priority>\n  </url>`;
+  }).join('\n');
+  res
+    .type('application/xml')
+    .send(`<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls}\n</urlset>\n`);
+});
+
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'dist', 'index.html'));
 });

@@ -178,10 +178,10 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
         <NavList>
           {[
             { label: '// home', active: true, id: 'home' },
+            { label: '// wbs', active: false, id: 'wbs' },
+            { label: '// stories', active: false, id: 'stories' },
             { label: '// poker', active: false, id: 'poker' },
             { label: '// retro', active: false, id: 'retro' },
-            { label: '// stories', active: false, id: 'stories' },
-            { label: '// wbs', active: false, id: 'wbs' },
           ].map(({ label, active, id }) => (
             <NavItemStyled key={label} active={active} onClick={() => id !== 'home' && onLaunch(id)}>
               <span className="wf-mono" style={{ fontSize: 13, color: active ? COLORS.cyan : COLORS.secondary }}>{label}</span>
@@ -192,7 +192,7 @@ const LandingPage: React.FC<LandingPageProps> = ({ onLaunch }) => {
         <StatusFooter>
           <Label style={{ fontSize: 10, display: 'block', marginBottom: 12 }}>system status</Label>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {['poker', 'retro', 'stories', 'wbs'].map(t => (
+            {['wbs', 'stories', 'poker', 'retro'].map(t => (
               <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <div style={{ width: 6, height: 6, background: COLORS.lime, borderRadius: '50%', boxShadow: `0 0 6px ${COLORS.lime}` }} />
                 <span className="wf-mono" style={{ fontSize: 11, color: COLORS.secondary }}>{t}</span>

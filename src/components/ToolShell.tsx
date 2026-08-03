@@ -174,10 +174,10 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, loc
         <NavList>
           {[
             { label: '// home', id: 'home', path: '/' },
+            { label: '// wbs', id: 'wbs', path: '/wbs' },
+            { label: '// stories', id: 'stories', path: '/stories' },
             { label: '// poker', id: 'poker', path: '/poker' },
             { label: '// retro', id: 'retro', path: '/retro' },
-            { label: '// stories', id: 'stories', path: '/stories' },
-            { label: '// wbs', id: 'wbs', path: '/wbs' },
           ].map(({ label, id, path }) => {
             const active = activeNav === id;
             return (
@@ -190,7 +190,7 @@ const ToolShell: React.FC<ToolShellProps> = ({ toolColor, activeNav, onBack, loc
 
         <SidebarFooter>
           <Label size={10} style={{ display: 'block', marginBottom: 12 }}>monitors</Label>
-          {['poker', 'retro', 'stories', 'wbs'].map(t => (
+          {['wbs', 'stories', 'poker', 'retro'].map(t => (
             <div key={t} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
               <div style={{ width: 6, height: 6, background: COLORS.lime, borderRadius: '50%', boxShadow: `0 0 4px ${COLORS.lime}` }} />
               <span className="wf-mono" style={{ fontSize: 11, color: t === activeNav ? toolColor : COLORS.secondary }}>{t}</span>
